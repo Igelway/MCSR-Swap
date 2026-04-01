@@ -1,0 +1,16 @@
+FROM itzg/minecraft-server:java8
+
+ENV EULA=TRUE \
+    TYPE=FABRIC \
+    VERSION=1.16.1 \
+    ONLINE_MODE=FALSE \
+    MEMORY=2G \
+    DIFFICULTY=hard \
+    SPAWN_PROTECTION=0 \
+    ENABLE_COMMAND_BLOCK=TRUE
+
+COPY fabric-mod/build/libs/mcsrswap-fabric-mod-*.jar /mods/
+
+EXPOSE 25565
+
+VOLUME ["/data"]

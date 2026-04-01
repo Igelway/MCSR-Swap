@@ -1,0 +1,11 @@
+FROM itzg/bungeecord:java17
+
+ENV TYPE=VELOCITY \
+    MEMORY=1G \
+    MCSRSWAP_DOCKER_MODE=true
+
+COPY velocity-plugin/target/mcsrswap-velocity-plugin-*.jar /plugins/
+
+EXPOSE 25577
+
+VOLUME ["/server"]
