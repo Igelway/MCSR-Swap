@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "mcsrswap",
+  "version": "1.0.0",
+  "name": "MCSR-Swap",
+  "description": "Server-side MCSR-Swap mod (Fabric)",
+  "authors": ["Igelway"],
+  "environment": "*",
+  "entrypoints": {
+    "main": ["de.mcsrswap.SwapMod"]
+  },
+  "mixins": [
+    "mcsrswap.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.12.0",
+    "fabric": "*",
+    "minecraft": "1.16.x"
+  }
+}

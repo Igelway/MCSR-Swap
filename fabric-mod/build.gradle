@@ -1,0 +1,26 @@
+plugins {
+    id 'fabric-loom' version '0.10-SNAPSHOT'
+}
+
+version = '1.0.0'
+group   = 'de.mcsrswap'
+base.archivesName = 'mcsrswap-fabric-mod'
+
+repositories {
+    maven { url 'https://maven.fabricmc.net/' }
+}
+
+dependencies {
+    // Minecraft 1.16.1 mit Yarn-Mappings
+    minecraft 'com.mojang:minecraft:1.16.1'
+    mappings  'net.fabricmc:yarn:1.16.1+build.21:v2'
+
+    modImplementation 'net.fabricmc:fabric-loader:0.12.12'
+
+    // Fabric-API: kompatibel mit dem Server (0.18.0 hat v0-Networking + lifecycle-events-v1)
+    modImplementation "net.fabricmc.fabric-api:fabric-api:0.18.0+build.387-1.16.1"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 11
+}
