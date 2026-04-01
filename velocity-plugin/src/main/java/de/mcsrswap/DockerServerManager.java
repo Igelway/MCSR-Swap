@@ -4,7 +4,7 @@ import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
-import com.github.dockerjava.core.DockerClientBuilder;
+import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
@@ -101,9 +101,7 @@ public class DockerServerManager {
                     .responseTimeout(Duration.ofSeconds(45))
                     .build();
             
-            dockerClient = DockerClientBuilder.getInstance(config)
-                    .withDockerHttpClient(httpClient)
-                    .build();
+            dockerClient = DockerClientImpl.getInstance(config, httpClient);
             
             dockerClient.pingCmd().exec();
             logger.info("Docker integration enabled: image={}, network={}, ports={}-{}", 

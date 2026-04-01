@@ -24,6 +24,14 @@ jobs:
           java-version: '11'
           cache: 'gradle'
       
+      - name: Grant execute permission for gradlew
+        working-directory: ./fabric-mod
+        run: chmod +x gradlew
+      
+      - name: Validate Gradle wrapper
+        working-directory: ./fabric-mod
+        uses: gradle/wrapper-validation-action@v2
+      
       - name: Build Fabric Mod
         working-directory: ./fabric-mod
         run: ./gradlew build --no-daemon
