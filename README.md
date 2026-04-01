@@ -9,20 +9,6 @@ You can play as one team or one team versus another team. The game mode consists
 
 ---
 
-## 🚀 Quick Start Options
-
-### Option 1: Classic Setup (Manual Configuration)
-**Recommended for:** Full control, any platform (Windows/Linux/Mac)
-
-Follow the setup instructions below. You manually configure all game servers.
-
-### Option 2: Docker Dynamic Setup
-**Recommended for:** Easy deployment, automatic server management
-
-See **[README-DOCKER.md](README-DOCKER.md)** for a simplified Docker-based setup where game servers are spawned automatically on `/ms start`.
-
----
-
 ## Requirements
 
 | Component | Version |

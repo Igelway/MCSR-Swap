@@ -11,7 +11,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
 public class WorldSwapCommands {
 
@@ -52,36 +51,6 @@ public class WorldSwapCommands {
     void cmdStart(CommandSource src, String[] args) {
         if (!isAdmin(src)) { src.sendMessage(Component.text("§cNo permission!")); return; }
         if (plugin.gameRunning) { src.sendMessage(Component.text("§cGame is already running!")); return; }
-
-        if (plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
-            List<Player> participants = plugin.server.getAllPlayers().stream()
-                    .filter(p -> !plugin.spectators.contains(p.getUniqueId()))
-                    .collect(Collectors.toList());
-            
-            if (participants.isEmpty()) {
-                src.sendMessage(Component.text("§cNo players to start the game!"));
-                return;
-            }
-            
-            int serverCount = participants.size();
-            src.sendMessage(Component.text("§7Starting " + serverCount + " Docker containers…"));
-            
-            List<String> startedServers = plugin.dockerManager.startServers(serverCount);
-            
-            if (startedServers.isEmpty()) {
-                src.sendMessage(Component.text("§cFailed to start Docker containers!"));
-                return;
-            }
-            
-            plugin.gameServers = startedServers;
-            src.sendMessage(Component.text("§aServers ready, starting game in 15 seconds…"));
-            
-            plugin.server.getScheduler().buildTask(plugin, () -> {
-                plugin.startGame();
-            }).delay(15, java.util.concurrent.TimeUnit.SECONDS).schedule();
-            
-            return;
-        }
 
         plugin.detectServers();
 
@@ -125,12 +94,6 @@ public class WorldSwapCommands {
     void cmdStop(CommandSource src, String[] args) {
         if (!isAdmin(src)) { src.sendMessage(Component.text("§cNo permission!")); return; }
         plugin.endGame();
-        
-        if (plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
-            src.sendMessage(Component.text("§7Stopping Docker containers…"));
-            plugin.dockerManager.stopAllServers();
-            src.sendMessage(Component.text("§aAll servers stopped."));
-        }
     }
 
     void cmdForceSwap(CommandSource src, String[] args) {
