@@ -1,6 +1,6 @@
 # MCSR-Swap
 MCSR-Swap is a Minecraft speedrun gamemode where players rotate between game servers on a timer. The goal is for the team to complete a configurable percentage of worlds by reaching and exiting the End portal.
-You can play as one team or versus another team. The plugin consists of two files:
+You can play as one team or one team versus another team. The game mode consists of two files:
 
 | File | Where it goes |
 |---|---|
@@ -41,7 +41,6 @@ Recommended mods (optional but advised):
 ---
 
 ## Network Layout
-
 
 
 Players **only ever connect to the Velocity port**. All game server ports must be firewalled from the outside (only accessible from localhost / the machine running Velocity).
@@ -99,7 +98,15 @@ versus: false              # Versus mode: two teams compete against each other
 language: en_us.yml        # Language file to use for player-facing messages
 gameServerPrefix: game     # Velocity server names starting with this prefix are treated as game servers
 lobbyServerName: lobby     # Exact Velocity server name used as the lobby
+spectateAfterWin: false    # After finishing a world, spectate an adjacent server until the next rotation
+spectateTarget: next       # Which adjacent server to spectate: "next" or "prev"
+spectateMinTime: 15        # Only activate spectate if at least this many seconds remain in the rotation
+saveHotbar: true           # On player swap, rearrange the server's hotbar items to match the joining player's own preferred hotbar layout
+eyeHoverTicks: 80          # Total Eye of Ender lifetime in ticks (vanilla: 80 ≈ 2 s hover phase)
 ```
+
+> **Why increase `eyeHoverTicks`?**  
+> On a multiplayer server you cannot pause the game to freeze the Eye of Ender (pause-buffering), which is a common singleplayer technique for [NinjabrainBot](https://github.com/Ninjabrain1/Ninjabrain-Bot) readings. Increasing the hover duration gives players more time to read the values before the eye drops. This value is pushed to all game servers at game start.
 
 #### Custom language files
 
@@ -143,32 +150,13 @@ fabric-api-0.18.0+build.387-1.16.1.jar
 FabricProxy-1.3.4.jar
 ```
 
-### 2.4 MCSR-Swap mod config
-
-On first start the mod creates:
-
-```
-config/mcsrswap/config.properties
-config/mcsrswap/languages/en_us.properties
-config/mcsrswap/languages/de_de.properties
-```
-
-**`config.properties`:**
-
-```properties
-# Total Eye of Ender lifetime in ticks. Vanilla = 80 (hover phase ~2 s).
-# Set higher to extend hover time. E.g. 160 → ~5-6 s of hover.
-eyeHoverTicks=80
-```
-
-> **Why increase `eyeHoverTicks`?**  
-> On a multiplayer server you cannot pause the game to freeze the Eye of Ender in place (pause-buffering), which is a common technique in singleplayer speedruns to get a clean F3+C reading for [NinjabrainBot](https://github.com/Ninjabrain1/Ninjabrain-Bot). Increasing the hover duration gives weaker players more time to read the values before the eye drops. Set this to the same value on **all** game servers for consistent behaviour.
+The mod has no configuration file of its own. All settings are configured centrally in the Velocity `plugins/mcsrswap/config.yml` and pushed to the game servers at game start.
 
 ---
 
 ## Step 3 – Lobby server setup
 
-Use a **Fabric** or **Paper/Purpur** server on port 25570. Plain Vanilla is not recommended as it lacks FabricProxy support. Players land here when they connect and between games.
+Use a **Fabric** or **Paper/Purpur** server on port 25570. Plain Vanilla is not recommended as it lacks velocity modern forwarding mode support. Players land here when they connect and between games.
 
 `server.properties`:
 
@@ -192,7 +180,7 @@ settings:
 
 ## Commands
 
-All commands run through the Velocity proxy. Prefix: `/ws`
+All commands run through the Velocity proxy. Prefix: `/ms`
 
 ### Admin commands (requires `swap.admin` permission)
 
@@ -217,10 +205,10 @@ All commands run through the Velocity proxy. Prefix: `/ws`
 
 Admin commands require the `swap.admin` permission.
 
-- **Console** always has full access (no permission plugin needed)
+- **Console** always has full access
 - **Players** need the `swap.admin` permission granted via a Velocity permissions plugin (e.g. [LuckPerms for Velocity](https://luckperms.net/))
 
-Without a permissions plugin, only the server console can run admin commands. This means you can start/stop the game via the Velocity console or RCON without installing LuckPerms.
+Without a permissions plugin, only the server console can run admin commands. This means you can start/stop the game via the Velocity console without installing LuckPerms.
 
 ---
 
@@ -271,3 +259,4 @@ All players join the same virtual network and connect using the host's Tailscale
 - Keep your game server ports firewalled (they should only accept connections from `127.0.0.1`)
 - Use Velocity's `online-mode = true` so only authenticated Mojang accounts can join
 - Consider a whitelist (`whitelist.json`) on the Velocity proxy for private sessions
+
