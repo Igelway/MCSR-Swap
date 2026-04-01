@@ -1,0 +1,10 @@
+**/.git
+**/.github
+**/target
+**/build
+**/*.jar
+!fabric-mod/build/libs/*.jar
+**/node_modules
+**/.gradle
+**/velocity-config
+**/lobby-data
