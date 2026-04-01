@@ -42,7 +42,7 @@ Recommended mods (optional but advised):
 
 ## Network Layout
 
-<img width="2250" height="1050" alt="Velocity-layout" src="https://github.com/user-attachments/assets/c4912c84-eb83-47e0-9f2e-1397d88de942" />
+![Preview](images/Velocity-layout.png)
 
 Players **only ever connect to the Velocity port**. All game server ports must be firewalled from the outside (only accessible from localhost / the machine running Velocity).
 
