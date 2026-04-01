@@ -78,7 +78,6 @@ public class VelocitySwapPlugin {
             MinecraftChannelIdentifier.from("mcsrswap:main");
 
     final WorldSwapCommands commands = new WorldSwapCommands(this);
-    DockerServerManager dockerManager;
 
     @Inject
     public VelocitySwapPlugin(ProxyServer server, @DataDirectory Path dataDirectory, Logger logger) {
@@ -123,14 +122,7 @@ public class VelocitySwapPlugin {
                         "spectateTarget: next\n" +
                         "spectateMinTime: 15\n" +
                         "saveHotbar: true\n" +
-                        "eyeHoverTicks: 80\n" +
-                        "docker:\n" +
-                        "  enabled: false\n" +
-                        "  gameServerImage: mcsrswap-gameserver:latest\n" +
-                        "  network: mcsrswap-network\n" +
-                        "  minPort: 25600\n" +
-                        "  maxPort: 25650\n" +
-                        "  dataPath: ''  # Empty = auto (XDG or ./server-data), or set custom path\n";
+                        "eyeHoverTicks: 80\n";
 
                 Files.writeString(configFile, defaultConfig);
             }
@@ -151,20 +143,6 @@ public class VelocitySwapPlugin {
             String languageFile = config.getOrDefault("language", "en_us.yml").toString();
             lang.load(dataDirectory, languageFile);
 
-            @SuppressWarnings("unchecked")
-            Map<String, Object> dockerConfig = (Map<String, Object>) config.get("docker");
-            
-            // Only initialize DockerManager if docker config exists and is enabled
-            if (dockerConfig != null) {
-                boolean dockerEnabled = (boolean) dockerConfig.getOrDefault("enabled", false);
-                String dockerEnv = System.getenv("MCSRSWAP_DOCKER_MODE");
-                
-                if (dockerEnabled || (dockerEnv != null && dockerEnv.equalsIgnoreCase("true"))) {
-                    dockerManager = new DockerServerManager(server, logger, this);
-                    dockerManager.initialize(dockerConfig);
-                }
-            }
-
             logger.info("Config loaded: rotation={}, percent={}, versus={}, language={}, gamePrefix={}, lobby={}, spectateAfterWin={}, spectateTarget={}, spectateMinTime={}, saveHotbar={}, eyeHoverTicks={}",
                     rotationTime, requiredPercentage, versusMode, languageFile, gameServerPrefix, lobbyServerName,
                     spectateAfterWin, spectateTarget, spectateMinTime, saveHotbar, eyeHoverTicks);
@@ -179,15 +157,12 @@ public class VelocitySwapPlugin {
     // =========================
 
     void detectServers() {
-        if (dockerManager != null && dockerManager.isDockerEnabled()) {
-            gameServers = dockerManager.getRunningServers();
-        } else {
-            gameServers.clear();
-            for (RegisteredServer rs : server.getAllServers()) {
-                String name = rs.getServerInfo().getName();
-                if (name.startsWith(gameServerPrefix)) {
-                    gameServers.add(name);
-                }
+        gameServers.clear();
+
+        for (RegisteredServer rs : server.getAllServers()) {
+            String name = rs.getServerInfo().getName();
+            if (name.startsWith(gameServerPrefix)) {
+                gameServers.add(name);
             }
         }
 
