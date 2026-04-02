@@ -1,5 +1,6 @@
 package de.mcsrswap;
 
+import net.minecraft.network.packet.s2c.play.PlaySoundS2CPacket;
 import net.minecraft.network.packet.s2c.play.TitleS2CPacket;
 import net.minecraft.scoreboard.ScoreboardCriterion;
 import net.minecraft.scoreboard.ScoreboardObjective;
@@ -7,6 +8,8 @@ import net.minecraft.scoreboard.ScoreboardPlayerScore;
 import net.minecraft.scoreboard.ServerScoreboard;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.LiteralText;
 
 import java.util.ArrayList;
@@ -64,11 +67,24 @@ public class ScoreboardManager {
         }
 
         // ActionBar timer for all players (each in their own language)
+        boolean urgent = currentTime > 0 && currentTime <= 5;
         for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
+            String timerText = Lang.timer(p.getUuid(), currentTime);
+            String colored = urgent ? "§c" + timerText : timerText;
             p.networkHandler.sendPacket(new TitleS2CPacket(
                     TitleS2CPacket.Action.ACTIONBAR,
-                    new LiteralText(Lang.timer(p.getUuid(), currentTime))
+                    new LiteralText(colored)
             ));
+            if (urgent) {
+                // Pitch rises from ~0.9 (5 s) to ~1.3 (1 s) for a satisfying countdown feel
+                float pitch = 0.9f + (5 - currentTime) * 0.1f;
+                p.networkHandler.sendPacket(new PlaySoundS2CPacket(
+                        SoundEvents.BLOCK_NOTE_BLOCK_PLING,
+                        SoundCategory.PLAYERS,
+                        p.getX(), p.getY(), p.getZ(),
+                        1.0f, pitch
+                ));
+            }
         }
     }
 
