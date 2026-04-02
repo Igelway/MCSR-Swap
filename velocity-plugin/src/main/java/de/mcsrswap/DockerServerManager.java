@@ -61,7 +61,7 @@ public class DockerServerManager {
         gameServerImage = dockerConfig.getOrDefault("gameServerImage", 
                 System.getenv("MCSRSWAP_GAMESERVER_IMAGE") != null 
                     ? System.getenv("MCSRSWAP_GAMESERVER_IMAGE") 
-                    : "ghcr.io/" + System.getenv("GITHUB_REPOSITORY") + "-gameserver:latest"
+                    : "ghcr.io/relacibo/mcsr-swap-gameserver:latest"
         ).toString();
         networkName = dockerConfig.getOrDefault("network", "mcsrswap-network").toString();
         minPort = (int) dockerConfig.getOrDefault("minPort", 25600);

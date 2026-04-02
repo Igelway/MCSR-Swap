@@ -1,27 +1,38 @@
 version: '3.8'
 
 services:
+  # Pre-pull game server image for faster /ms start
+  gameserver-prepull:
+    image: ${MCSRSWAP_GAMESERVER_IMAGE:-ghcr.io/relacibo/mcsr-swap-gameserver:latest}
+    container_name: mcsrswap-gameserver-prepull
+    command: "true"
+    restart: "no"
+    profiles:
+      - tools
+
   velocity:
-    image: ${MCSRSWAP_VELOCITY_IMAGE:-ghcr.io/OWNER/REPO-velocity:latest}
+    image: ${MCSRSWAP_VELOCITY_IMAGE:-ghcr.io/relacibo/mcsr-swap-velocity:latest}
     container_name: mcsrswap-velocity
     ports:
-      - "25577:25577"
+      - "25565:25577"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock:rw
       - ./velocity-config:/server
     environment:
       TYPE: VELOCITY
       MEMORY: 1G
       MCSRSWAP_DOCKER_MODE: "true"
+      MCSRSWAP_GAMESERVER_IMAGE: ${MCSRSWAP_GAMESERVER_IMAGE:-ghcr.io/relacibo/mcsr-swap-gameserver:latest}
     networks:
       - mcsrswap-network
     restart: unless-stopped
+    user: "0:${DOCKER_GID:-0}"
 
   lobby:
     image: itzg/minecraft-server:java8
     container_name: mcsrswap-lobby
-    ports:
-      - "25565:25565"
+    expose:
+      - "25565"
     environment:
       EULA: "TRUE"
       TYPE: FABRIC
