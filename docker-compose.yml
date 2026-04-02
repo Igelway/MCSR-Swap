@@ -29,7 +29,7 @@ services:
     user: "0:${DOCKER_GID:-0}"
 
   lobby:
-    image: itzg/minecraft-server:java8
+    image: itzg/minecraft-server:java21
     container_name: mcsrswap-lobby
     expose:
       - "25565"

@@ -1,20 +1,17 @@
 FROM eclipse-temurin:21-jre-jammy
 
-# Install dependencies
-RUN apt-get update && \
-    apt-get install -y curl && \
-    rm -rf /var/lib/apt/lists/*
-
 WORKDIR /server
 
-# Download Velocity
-RUN curl -o velocity.jar https://api.papermc.io/v2/projects/velocity/versions/3.3.0-SNAPSHOT/builds/436/downloads/velocity-3.3.0-SNAPSHOT-436.jar
+# Download Velocity 3.4.0 (latest stable)
+RUN apt-get update && \
+    apt-get install -y curl && \
+    curl -o velocity.jar -L https://fill-data.papermc.io/v1/objects/fb599cbda6a6d01decce5e281f71f51cae7cacffcfafca32a09601f407b0583e/velocity-3.4.0-566.jar && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy plugin
 COPY mcsrswap-velocity-plugin-*.jar /server/plugins/
 
-ENV TYPE=VELOCITY \
-    MEMORY=1G \
+ENV MEMORY=1G \
     MCSRSWAP_DOCKER_MODE=true
 
 EXPOSE 25577
@@ -22,4 +19,4 @@ EXPOSE 25577
 VOLUME ["/server"]
 
 # Start Velocity
-CMD ["java", "-Xms${MEMORY:-1G}", "-Xmx${MEMORY:-1G}", "-XX:+UseG1GC", "-XX:G1HeapRegionSize=4M", "-XX:+UnlockExperimentalVMOptions", "-XX:+ParallelRefProcEnabled", "-XX:+AlwaysPreTouch", "-jar", "velocity.jar"]
+CMD exec java -Xms${MEMORY} -Xmx${MEMORY} -XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -jar velocity.jar
