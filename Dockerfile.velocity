@@ -1,4 +1,4 @@
-FROM itzg/bungeecord:java17
+FROM itzg/bungeecord:latest
 
 ENV TYPE=VELOCITY \
     MEMORY=1G \
