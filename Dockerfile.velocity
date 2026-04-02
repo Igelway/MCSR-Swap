@@ -1,11 +1,25 @@
-FROM itzg/bungeecord:latest
+FROM eclipse-temurin:21-jre-jammy
+
+# Install dependencies
+RUN apt-get update && \
+    apt-get install -y curl && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /server
+
+# Download Velocity
+RUN curl -o velocity.jar https://api.papermc.io/v2/projects/velocity/versions/3.3.0-SNAPSHOT/builds/436/downloads/velocity-3.3.0-SNAPSHOT-436.jar
+
+# Copy plugin
+COPY mcsrswap-velocity-plugin-*.jar /server/plugins/
 
 ENV TYPE=VELOCITY \
     MEMORY=1G \
     MCSRSWAP_DOCKER_MODE=true
 
-COPY mcsrswap-velocity-plugin-*.jar /plugins/
-
 EXPOSE 25577
 
 VOLUME ["/server"]
+
+# Start Velocity
+CMD ["java", "-Xms${MEMORY:-1G}", "-Xmx${MEMORY:-1G}", "-XX:+UseG1GC", "-XX:G1HeapRegionSize=4M", "-XX:+UnlockExperimentalVMOptions", "-XX:+ParallelRefProcEnabled", "-XX:+AlwaysPreTouch", "-jar", "velocity.jar"]
