@@ -76,6 +76,9 @@ public class StateManager {
         s.swimming     = p.isSwimming();
         s.fallFlying   = p.isFallFlying();
         s.vehicleUuid  = (p.hasVehicle() && p.getVehicle() != null) ? p.getVehicle().getUuid() : null;
+        // Eject the player immediately so the vehicle stays in the world after disconnect.
+        // This ensures the UUID lookup in restoreState will succeed for the next player.
+        if (s.vehicleUuid != null) p.stopRiding();
 
         s.statusEffects = new ArrayList<>();
         for (StatusEffectInstance effect : p.getStatusEffects()) {
