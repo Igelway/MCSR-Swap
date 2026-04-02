@@ -1,6 +1,6 @@
 FROM eclipse-temurin:21-jre-jammy
 
-WORKDIR /server
+WORKDIR /app
 
 # Download Velocity 3.4.0 (latest stable)
 RUN apt-get update && \
@@ -9,14 +9,15 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy plugin
-COPY mcsrswap-velocity-plugin-*.jar /server/plugins/
+COPY mcsrswap-velocity-plugin-*.jar /app/plugins/
 
 ENV MEMORY=1G \
     MCSRSWAP_DOCKER_MODE=true
 
 EXPOSE 25577
 
+# Config directory (mounted from host)
 VOLUME ["/server"]
 
 # Start Velocity
-CMD exec java -Xms${MEMORY} -Xmx${MEMORY} -XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -jar velocity.jar
+CMD exec java -Xms${MEMORY} -Xmx${MEMORY} -XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -jar /app/velocity.jar
