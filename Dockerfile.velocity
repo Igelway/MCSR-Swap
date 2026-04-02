@@ -19,5 +19,6 @@ EXPOSE 25577
 # Config directory (mounted from host)
 VOLUME ["/server"]
 
-# Start Velocity
+# Start Velocity (run from /server to read config)
+WORKDIR /server
 CMD exec java -Xms${MEMORY} -Xmx${MEMORY} -XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -jar /app/velocity.jar
