@@ -69,6 +69,13 @@ public class SwapMod implements ModInitializer {
     private final Map<UUID, GameMode> lastKnownGameMode = new HashMap<>();
 
     /**
+     * Players who are about to join as locked spectators (watchers).
+     * Velocity sends "incoming_spectator" before the watcher connects, so ENTITY_LOAD
+     * can immediately skip the normal state restore and put them in spectator mode.
+     */
+    private final Set<UUID> pendingSpectators = new HashSet<>();
+
+    /**
      * Players currently connected to this server.
      * ENTITY_LOAD also fires on dimension changes and respawns –
      * restoreState should only be called on the actual first join.
@@ -119,6 +126,22 @@ public class SwapMod implements ModInitializer {
 
             if (!connectedPlayers.contains(player.getUuid())) {
                 connectedPlayers.add(player.getUuid());
+
+                // Incoming watcher: skip state restore entirely, put in spectator immediately.
+                // This is triggered by a "incoming_spectator" pre-notification from Velocity,
+                // sent before the player's connection request fires.
+                if (pendingSpectators.remove(player.getUuid())) {
+                    player.interactionManager.setGameMode(GameMode.SPECTATOR,
+                            player.interactionManager.getGameMode());
+                    sendModeToVelocity(player, true);
+                    ServerPlayerEntity toWatch = findActiveSurvivalPlayer(server, player.getUuid());
+                    if (toWatch != null) {
+                        player.networkHandler.sendPacket(new SetCameraEntityS2CPacket(toWatch));
+                        spectatorCameras.put(player.getUuid(), toWatch.getUuid());
+                    }
+                    return;
+                }
+
                 boolean spectator = player.interactionManager.getGameMode() == GameMode.SPECTATOR;
                 if (spectator) {
                     sendModeToVelocity(player, true);
@@ -201,6 +224,7 @@ public class SwapMod implements ModInitializer {
                 lastKnownGameMode.keySet().retainAll(online);
                 restoreCountdown.keySet().retainAll(online);
                 pendingRestore.keySet().retainAll(online);
+                pendingSpectators.retainAll(online);
                 stateManager.cleanupDisconnected(online);
                 currentlyDead.retainAll(online);
                 spectatorCameras.keySet().retainAll(online);
@@ -337,12 +361,25 @@ public class SwapMod implements ModInitializer {
                 ModConfig.eyeHoverTicks = in.readInt();
                 return;
 
+            case "incoming_spectator": {
+                // Pre-notification from Velocity: this player will connect as a watcher shortly.
+                // Mark them so ENTITY_LOAD skips the normal state restore.
+                pendingSpectators.add(UUID.fromString(in.readUTF()));
+                return;
+            }
+
             case "become_spectator": {
                 UUID uuid = UUID.fromString(in.readUTF());
+                // Cancel any pending state restore – the player should become a spectator,
+                // not inherit the current server's active player state.
+                restoreCountdown.remove(uuid);
+                pendingRestore.remove(uuid);
                 ServerPlayerEntity target = server.getPlayerManager().getPlayer(uuid);
                 if (target == null) return;
                 // Switch to spectator and lock camera onto the active survival player
-                target.interactionManager.setGameMode(GameMode.SPECTATOR, GameMode.SURVIVAL);
+                target.interactionManager.setGameMode(GameMode.SPECTATOR,
+                        target.interactionManager.getGameMode());
+                sendModeToVelocity(target, true);
                 ServerPlayerEntity toWatch = findActiveSurvivalPlayer(server, uuid);
                 if (toWatch != null) {
                     target.networkHandler.sendPacket(new SetCameraEntityS2CPacket(toWatch));
