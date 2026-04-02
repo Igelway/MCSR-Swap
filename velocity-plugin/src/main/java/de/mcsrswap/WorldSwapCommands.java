@@ -26,9 +26,21 @@ public class WorldSwapCommands {
 
     /** Returns true if the source is allowed to use admin commands.
      *  Console always has access. Players need the "swap.admin" permission
-     *  (granted via a permissions plugin such as LuckPerms). */
+     *  (granted via a permissions plugin such as LuckPerms) OR be listed in config.yml admins list. */
     private boolean isAdmin(CommandSource src) {
-        return src instanceof ConsoleCommandSource || src.hasPermission("swap.admin");
+        if (src instanceof ConsoleCommandSource) {
+            return true;
+        }
+        if (src.hasPermission("swap.admin")) {
+            return true;
+        }
+        if (src instanceof Player) {
+            Player player = (Player) src;
+            String username = player.getUsername();
+            String uuid = player.getUniqueId().toString();
+            return plugin.adminPlayers.contains(username) || plugin.adminPlayers.contains(uuid);
+        }
+        return false;
     }
 
     /** Max players per team = gameServers.size() / 2. Returns 0 if unknown (no servers detected yet). */

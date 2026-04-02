@@ -42,6 +42,7 @@ public class VelocitySwapPlugin {
     String gameServerPrefix = "game";
     String lobbyServerName = "lobby";
     final VelocityLang lang = new VelocityLang();
+    final Set<String> adminPlayers = new HashSet<>();
 
     int currentTime;
     boolean gameRunning = false;
@@ -124,13 +125,17 @@ public class VelocitySwapPlugin {
                         "spectateMinTime: 15\n" +
                         "saveHotbar: true\n" +
                         "eyeHoverTicks: 80\n" +
+                        "admins:\n" +
+                        "  # List of admin players (username or UUID)\n" +
+                        "  # - \"YourMinecraftName\"\n" +
+                        "  # - \"UUID-HERE\"\n" +
                         "docker:\n" +
                         "  enabled: false\n" +
                         "  gameServerImage: mcsrswap-gameserver:latest\n" +
                         "  network: mcsrswap-network\n" +
                         "  minPort: 25600\n" +
                         "  maxPort: 25650\n" +
-                        "  dataPath: ''  # Empty = auto (XDG or ./server-data), or set custom path\n";
+                        "  dataPath: './server-data'  # Relative path for Docker setup, or empty for XDG (~/.local/share/mcsrswap/servers)\n";
 
                 Files.writeString(configFile, defaultConfig);
             }
@@ -150,6 +155,16 @@ public class VelocitySwapPlugin {
             eyeHoverTicks    = (int) config.getOrDefault("eyeHoverTicks", 80);
             String languageFile = config.getOrDefault("language", "en_us.yml").toString();
             lang.load(dataDirectory, languageFile);
+
+            // Load admin list
+            adminPlayers.clear();
+            Object adminsObj = config.get("admins");
+            if (adminsObj instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<String> adminsList = (List<String>) adminsObj;
+                adminPlayers.addAll(adminsList);
+                logger.info("Loaded {} admin(s): {}", adminPlayers.size(), adminPlayers);
+            }
 
             @SuppressWarnings("unchecked")
             Map<String, Object> dockerConfig = (Map<String, Object>) config.get("docker");

@@ -40,6 +40,6 @@ Thumbs.db
 hs_err_pid*
 replay_pid*
 
-# Docker volumes
+# Docker volumes and server data
 velocity-config/
-lobby-data/
+server-data/

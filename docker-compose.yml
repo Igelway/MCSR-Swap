@@ -43,7 +43,7 @@ services:
       MOTD: "MCSR-Swap Lobby"
       MEMORY: 2G
     volumes:
-      - ./lobby-data:/data
+      - ./server-data/lobby:/data
     networks:
       - mcsrswap-network
     restart: unless-stopped
