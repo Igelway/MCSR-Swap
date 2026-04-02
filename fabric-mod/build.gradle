@@ -24,3 +24,9 @@ dependencies {
 tasks.withType(JavaCompile).configureEach {
     it.options.release = 11
 }
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}

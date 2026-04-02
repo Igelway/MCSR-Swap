@@ -4,7 +4,7 @@ ENV TYPE=VELOCITY \
     MEMORY=1G \
     MCSRSWAP_DOCKER_MODE=true
 
-COPY velocity-plugin/target/mcsrswap-velocity-plugin-*.jar /plugins/
+COPY mcsrswap-velocity-plugin-*.jar /plugins/
 
 EXPOSE 25577
 

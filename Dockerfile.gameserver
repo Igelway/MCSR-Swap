@@ -9,7 +9,7 @@ ENV EULA=TRUE \
     SPAWN_PROTECTION=0 \
     ENABLE_COMMAND_BLOCK=TRUE
 
-COPY fabric-mod/build/libs/mcsrswap-fabric-mod-*.jar /mods/
+COPY mcsrswap-fabric-mod-*.jar /mods/
 
 EXPOSE 25565
 
