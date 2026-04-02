@@ -126,6 +126,12 @@ public class WorldSwapCommands {
                 plugin.spectators.add(uuid);
                 src.sendMessage(Component.text("§7" + target.getUsername() + " is now a spectator."));
                 target.sendMessage(Component.text(plugin.lang.get("spectator_added")));
+                // If the game is running the player is currently on a game server – send them
+                // to the lobby immediately so they are not still actively playing.
+                if (plugin.gameRunning) {
+                    plugin.server.getServer(plugin.lobbyServerName)
+                            .ifPresent(s -> target.createConnectionRequest(s).fireAndForget());
+                }
             }
         }, () -> src.sendMessage(Component.text("§cPlayer not found: " + args[0])));
     }
