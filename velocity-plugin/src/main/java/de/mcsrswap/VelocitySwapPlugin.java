@@ -257,7 +257,8 @@ public class VelocitySwapPlugin {
             for (Player player : server.getAllPlayers()) {
 
                 if (!playerServer.containsKey(player.getUniqueId())) continue;
-                if (spectators.contains(player.getUniqueId())) continue;
+                boolean isWatcher = watchingPlayers.containsKey(player.getUniqueId());
+                if (!isWatcher && spectators.contains(player.getUniqueId())) continue;
 
                 List<String> servers = getTeamServers(player.getUniqueId());
                 String current = playerServer.get(player.getUniqueId());
@@ -483,7 +484,11 @@ public class VelocitySwapPlugin {
             UUID uuid = UUID.fromString(in.readUTF());
             String mode = in.readUTF();
             if ("spectator".equals(mode)) {
-                spectators.add(uuid);
+                // Do not track watching players in the spectators set – they are handled
+                // separately by watchingPlayers and must not be skipped during rotation.
+                if (!watchingPlayers.containsKey(uuid)) {
+                    spectators.add(uuid);
+                }
             } else {
                 spectators.remove(uuid);
             }
@@ -500,14 +505,14 @@ public class VelocitySwapPlugin {
         if (spectators.contains(player.getUniqueId())) return; // observer: no state sync
 
         // Watching player: tell the Fabric server to put them in locked spectator mode.
+        // incoming_spectator was already sent as a pre-notification (see handleFinish), so the
+        // Fabric ENTITY_LOAD handler can act immediately. This message is the fallback.
         if (watchingPlayers.containsKey(player.getUniqueId())) {
             final UUID uuid = player.getUniqueId();
-            server.getScheduler().buildTask(this, () ->
-                sendToBackend(player, buildMessage(out -> {
-                    out.writeUTF("become_spectator");
-                    out.writeUTF(uuid.toString());
-                }))
-            ).delay(500, TimeUnit.MILLISECONDS).schedule();
+            sendToBackend(player, buildMessage(out -> {
+                out.writeUTF("become_spectator");
+                out.writeUTF(uuid.toString());
+            }));
             return; // no state sync for watchers
         }
 
@@ -582,6 +587,19 @@ public class VelocitySwapPlugin {
 
                 String spectateServer = findSpectateTarget(uuid, serverName);
                 if (spectateServer == null) continue;
+
+                // Pre-notify the spectate server BEFORE the watcher connects, so the Fabric
+                // ENTITY_LOAD handler can immediately put them in spectator mode and skip the
+                // normal state restore. We relay the message through any player already there.
+                final UUID finalUuid = uuid;
+                server.getServer(spectateServer).ifPresent(rs ->
+                    rs.getPlayersConnected().stream().findFirst().ifPresent(relay ->
+                        sendToBackend(relay, buildMessage(out -> {
+                            out.writeUTF("incoming_spectator");
+                            out.writeUTF(finalUuid.toString());
+                        }))
+                    )
+                );
 
                 watchingPlayers.put(uuid, serverName);
                 server.getPlayer(uuid).ifPresent(p ->
