@@ -1,0 +1,91 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+      
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      
+      # Build Velocity Plugin
+      - name: Update pom.xml version
+        working-directory: ./velocity-plugin
+        run: |
+          sed -i "s|<version>.*</version>|<version>${{ steps.version.outputs.version }}</version>|" pom.xml | head -15
+          echo "Updated pom.xml:"
+          head -15 pom.xml
+      
+      - name: Build Velocity Plugin
+        working-directory: ./velocity-plugin
+        run: mvn clean package -DskipTests
+      
+      # Build Fabric Mod
+      - name: Update build.gradle version
+        working-directory: ./fabric-mod
+        run: |
+          sed -i "s/version = .*/version = '${{ steps.version.outputs.version }}'/" build.gradle
+          echo "Updated build.gradle:"
+          head -10 build.gradle
+      
+      - name: Grant execute permission for gradlew
+        working-directory: ./fabric-mod
+        run: chmod +x gradlew
+      
+      - name: Build Fabric Mod
+        working-directory: ./fabric-mod
+        run: ./gradlew build --no-daemon
+      
+      # Create GitHub Release
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            velocity-plugin/target/mcsrswap-velocity-plugin-*.jar
+            fabric-mod/build/libs/mcsrswap-fabric-mod-*.jar
+          body: |
+            ## MCSR-Swap ${{ steps.version.outputs.version }}
+            
+            ### Installation
+            
+            **Velocity Plugin:**
+            - Download `mcsrswap-velocity-plugin-${{ steps.version.outputs.version }}.jar`
+            - Place in `plugins/` folder of your Velocity proxy
+            
+            **Fabric Mod:**
+            - Download `mcsrswap-fabric-mod-${{ steps.version.outputs.version }}.jar`
+            - Place in `mods/` folder of each Minecraft 1.16.1 Fabric game server
+            
+            ### Docker Images
+            
+            Pre-built Docker images are available on GitHub Container Registry:
+            - `ghcr.io/${{ github.repository }}-velocity:${{ steps.version.outputs.version }}`
+            - `ghcr.io/${{ github.repository }}-gameserver:${{ steps.version.outputs.version }}`
+            
+            See [README-DOCKER.md](https://github.com/${{ github.repository }}/blob/main/README-DOCKER.md) for Docker setup instructions.
+            
+            ### Changelog
+            
+            See commit history for changes in this release.
+          draft: false
+          prerelease: false
+          generate_release_notes: true
