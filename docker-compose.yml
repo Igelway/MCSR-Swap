@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Pre-pull game server image for faster /ms start
   gameserver-prepull:
