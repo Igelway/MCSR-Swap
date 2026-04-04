@@ -1,0 +1,45 @@
+services:
+  velocity:
+    image: ${MCSRSWAP_VELOCITY_IMAGE:-ghcr.io/igelway/mcsr-swap-velocity:latest}
+    container_name: mcsrswap-velocity
+    ports:
+      - "25565:25577"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - ./data/velocity:/data
+    environment:
+      MCSRSWAP_DOCKER_MODE: "true"
+      MCSRSWAP_GAMESERVER_IMAGE: ${MCSRSWAP_GAMESERVER_IMAGE:-ghcr.io/igelway/mcsr-swap-gameserver:latest}
+    networks:
+      - mcsrswap-network
+    restart: unless-stopped
+    user: "0:${DOCKER_GID:-0}"
+    labels:
+      - "mcsrswap.role=proxy"
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+
+  lobby:
+    image: itzg/minecraft-server:java21
+    container_name: mcsrswap-lobby
+    expose:
+      - "25565"
+    environment:
+      EULA: "TRUE"
+      TYPE: FABRIC
+      VERSION: "1.16.1"
+      ONLINE_MODE: "FALSE"
+      DIFFICULTY: peaceful
+      SPAWN_PROTECTION: 0
+      MOTD: "MCSR-Swap Lobby"
+      MEMORY: 2G
+    volumes:
+      - ./data/lobby:/data
+    networks:
+      - mcsrswap-network
+    restart: unless-stopped
+
+networks:
+  mcsrswap-network:
+    name: mcsrswap-network
+    driver: bridge
