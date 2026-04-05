@@ -46,6 +46,15 @@ public class SwapMod implements ModInitializer {
      */
     private boolean daylightCycleFrozen = false;
 
+    /** true when server is fully started and ready for players. */
+    private boolean serverReady = false;
+
+    /**
+     * true when game is frozen (no ticks processed) – set by reset, cleared by first player join or
+     * start.
+     */
+    private boolean frozen = true;
+
     /**
      * Players set to locked-spectator mode via "become_spectator" from Velocity. Their camera is
      * periodically re-locked to the active survival player. Maps watcher UUID → UUID of the player
@@ -107,6 +116,9 @@ public class SwapMod implements ModInitializer {
                     scoreboardManager.setupScoreboard(srv);
                     stateManager.setServer(srv);
                     freezeWorldTime();
+
+                    // Server is now ready - Velocity will detect this via ping
+                    serverReady = true;
                 });
 
         // Incoming plugin messages from Velocity via the v0 networking API
@@ -154,7 +166,8 @@ public class SwapMod implements ModInitializer {
                             sendModeToVelocity(player, true);
                             return; // Spectator: no state restore, no scoreboard update
                         }
-                        // Unfreeze day/night cycle when first survival player joins after a reset
+                        // Unfreeze day/night cycle and game when first survival player joins after
+                        // a reset
                         if (daylightCycleFrozen) {
                             daylightCycleFrozen = false;
                             server.getWorlds()
@@ -163,6 +176,9 @@ public class SwapMod implements ModInitializer {
                                                     w.getGameRules()
                                                             .get(GameRules.DO_DAYLIGHT_CYCLE)
                                                             .set(true, server));
+                        }
+                        if (frozen) {
+                            frozen = false;
                         }
                         scoreboardManager.update(
                                 finished, completedWorlds, requiredWorlds, currentTime, player);
@@ -195,6 +211,10 @@ public class SwapMod implements ModInitializer {
         // Tick-Handler: Restore-Delay, End-Portal-Erkennung, State-Save, Disconnect-Tracking
         ServerTickEvents.END_SERVER_TICK.register(
                 srv -> {
+                    // Skip all tick processing if frozen
+                    if (frozen) {
+                        return;
+                    }
 
                     // ── Deferred state restore ─────────────────────────────────────
                     for (Iterator<Map.Entry<UUID, Integer>> it =
@@ -332,6 +352,21 @@ public class SwapMod implements ModInitializer {
         ServerSidePacketRegistry.INSTANCE.sendToPlayer(player, packet);
     }
 
+    /**
+     * Send a global message to Velocity (not tied to a specific player). Uses the first available
+     * player as transport, or logs a warning if no players are online.
+     */
+    private void sendGlobalMessageToVelocity(String type, Consumer<ByteArrayDataOutput> writer) {
+        if (server == null || server.getPlayerManager().getPlayerList().isEmpty()) {
+            System.out.println(
+                    "[MCSRSWAP] Cannot send '" + type + "' to Velocity: no players online");
+            return;
+        }
+        // Use first available player as message transport
+        ServerPlayerEntity anyPlayer = server.getPlayerManager().getPlayerList().get(0);
+        sendToVelocity(anyPlayer, writer);
+    }
+
     // =========================
     // MESSAGING (Velocity → Fabric-Mod)
     // =========================
@@ -368,6 +403,7 @@ public class SwapMod implements ModInitializer {
 
             case "reset":
                 resetWorldState();
+                frozen = true; // Re-freeze after reset
                 return; // resetWorldState already calls updateScoreboard()
 
             case "save":

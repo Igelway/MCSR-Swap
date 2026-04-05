@@ -10,6 +10,7 @@ import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.event.player.PlayerChooseInitialServerEvent;
 import com.velocitypowered.api.event.player.ServerConnectedEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
+import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.*;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
@@ -40,9 +41,11 @@ public class VelocitySwapPlugin {
     String gameServerPrefix = "game";
     String lobbyServerName = "lobby";
     final VelocityLang lang = new VelocityLang();
+    final Set<String> adminPlayers = new HashSet<>();
 
     int currentTime;
-    boolean gameRunning = false;
+    GameState gameState = GameState.LOBBY;
+    List<String> admins = new ArrayList<>();
 
     final Map<UUID, String> playerServer = new HashMap<>();
     final Set<String> finishedServers = new HashSet<>();
@@ -79,11 +82,21 @@ public class VelocitySwapPlugin {
 
     final Set<UUID> pendingReset = new HashSet<>();
 
+    /** Servers that have sent a "ready" signal after startup. */
+    final Set<String> readyServers = new HashSet<>();
+
+    public Logger getLogger() {
+        return logger;
+    }
+
     List<String> gameServers = new ArrayList<>();
 
     final MinecraftChannelIdentifier CHANNEL = MinecraftChannelIdentifier.from("mcsrswap:main");
 
     final WorldSwapCommands commands = new WorldSwapCommands(this);
+    DockerServerManager dockerManager;
+    boolean dockerMode = false;
+    private PluginConfig config;
 
     @Inject
     public VelocitySwapPlugin(
@@ -97,12 +110,36 @@ public class VelocitySwapPlugin {
     public void onInit(ProxyInitializeEvent event) {
 
         loadConfig();
+        setupAdminPermissions();
+
+        // Add shutdown hook to cleanup game servers
+        if (dockerMode) {
+            Runtime.getRuntime()
+                    .addShutdownHook(
+                            new Thread(
+                                    () -> {
+                                        logger.info("Shutting down - cleaning up game servers...");
+                                        try {
+                                            dockerManager.stopAllServers();
+                                        } catch (Exception e) {
+                                            logger.error("Error during shutdown cleanup", e);
+                                        }
+                                    }));
+        }
 
         server.getChannelRegistrar().register(CHANNEL);
 
         detectServers();
         registerCommands();
         startTimer();
+    }
+
+    @Subscribe
+    public void onShutdown(ProxyShutdownEvent event) {
+        logger.info("Shutting down...");
+        if (dockerManager != null) {
+            dockerManager.shutdown();
+        }
     }
 
     // =========================
@@ -122,34 +159,99 @@ public class VelocitySwapPlugin {
                         "rotationTime: 120\n"
                                 + "requiredPercentage: 1.0\n"
                                 + "versus: false\n"
-                                + "language: en_us.yml\n"
+                                + "language: en_US\n"
                                 + "gameServerPrefix: game\n"
                                 + "lobbyServerName: lobby\n"
                                 + "spectateAfterWin: false\n"
                                 + "spectateTarget: next\n"
                                 + "spectateMinTime: 15\n"
                                 + "saveHotbar: true\n"
-                                + "eyeHoverTicks: 80\n";
+                                + "eyeHoverTicks: 80\n"
+                                + "admins:\n"
+                                + "  # List of admin players (username or UUID)\n"
+                                + "  # - \"YourMinecraftName\"\n"
+                                + "  # - \"UUID-HERE\"\n"
+                                + "docker:\n"
+                                + "  enabled: false\n"
+                                + "  image: ghcr.io/igelway/mcsr-swap-gameserver:latest\n"
+                                + "  network: mcsrswap-network\n"
+                                + "  dataPath: ./data\n"
+                                + " ./data/game{N}), "
+                                + " (~/.local/share/mcsrswap/servers)\n";
 
                 Files.writeString(configFile, defaultConfig);
             }
 
             Yaml yaml = new Yaml();
-            Map<String, Object> config = yaml.load(Files.newInputStream(configFile));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> rawConfig = yaml.load(Files.newInputStream(configFile));
+            if (rawConfig == null) rawConfig = Map.of();
 
-            rotationTime = (int) config.getOrDefault("rotationTime", 120);
-            requiredPercentage =
-                    Double.parseDouble(config.getOrDefault("requiredPercentage", 1.0).toString());
-            versusMode = (boolean) config.getOrDefault("versus", false);
-            gameServerPrefix = config.getOrDefault("gameServerPrefix", "game").toString();
-            lobbyServerName = config.getOrDefault("lobbyServerName", "lobby").toString();
-            spectateAfterWin = (boolean) config.getOrDefault("spectateAfterWin", false);
-            spectateTarget = config.getOrDefault("spectateTarget", "next").toString();
-            spectateMinTime = (int) config.getOrDefault("spectateMinTime", 15);
-            saveHotbar = (boolean) config.getOrDefault("saveHotbar", true);
-            eyeHoverTicks = (int) config.getOrDefault("eyeHoverTicks", 80);
-            String languageFile = config.getOrDefault("language", "en_us.yml").toString();
+            // Build typed config and use it as primary source for all known fields
+            PluginConfig cfg = PluginConfig.fromMap(rawConfig);
+            this.config = cfg; // Store the config
+
+            rotationTime = cfg.rotationTime;
+            requiredPercentage = cfg.requiredPercentage;
+            versusMode = cfg.versus;
+
+            // use typed config values
+            gameServerPrefix = cfg.gameServerPrefix;
+            lobbyServerName = cfg.lobbyServerName;
+            spectateAfterWin = cfg.spectateAfterWin;
+            spectateTarget = cfg.spectateTarget;
+            spectateMinTime = cfg.spectateMinTime;
+            saveHotbar = cfg.saveHotbar;
+            eyeHoverTicks = cfg.eyeHoverTicks;
+
+            // language from typed config (normalize to filename)
+            String languageFile =
+                    cfg.language.endsWith(".yml")
+                            ? cfg.language
+                            : cfg.language.toLowerCase() + ".yml";
             lang.load(dataDirectory, languageFile);
+
+            // Allow overriding the lobby server via environment variable (set in docker-compose)
+            String envLobby = System.getenv("MCSRSWAP_LOBBY_ADDRESS");
+            if (envLobby != null && !envLobby.isBlank()) {
+                lobbyServerName = envLobby;
+                logger.info("Overriding lobby server name from env: {}", lobbyServerName);
+            }
+
+            // Load admin list from typed config
+            adminPlayers.clear();
+            if (!cfg.admins.isEmpty()) {
+                adminPlayers.addAll(cfg.admins);
+            }
+            logger.info("Loaded {} admin(s): {}", adminPlayers.size(), adminPlayers);
+
+            // Docker config: allow env overrides for image/mode
+            PluginConfig.Docker dockerCfg = cfg.docker;
+            String envDockerMode = System.getenv("MCSRSWAP_DOCKER_MODE");
+            String envImage = System.getenv("MCSRSWAP_GAMESERVER_IMAGE");
+            boolean enabled =
+                    dockerCfg.enabled
+                            || (envDockerMode != null && envDockerMode.equalsIgnoreCase("true"));
+            String image = (envImage != null && !envImage.isBlank()) ? envImage : dockerCfg.image;
+
+            if (enabled) {
+                dockerMode = true;
+                try {
+                    dockerManager = new DockerServerManager(server, logger, this);
+                    // pass a simple map to initialize (keeps initialize signature unchanged)
+                    Map<String, Object> dockerInit = new HashMap<>();
+                    dockerInit.put("enabled", true);
+                    dockerInit.put("image", image);
+                    dockerInit.put("network", dockerCfg.network);
+                    dockerManager.initialize(dockerInit);
+                } catch (NoClassDefFoundError e) {
+                    logger.error(
+                            "Docker mode is enabled but docker-java dependencies are not available!");
+                    logger.error(
+                            "Please ensure docker-java libraries are in the classpath when using Docker mode.");
+                    throw new RuntimeException("Docker dependencies missing", e);
+                }
+            }
 
             logger.info(
                     "Config loaded: rotation={}, percent={}, versus={}, language={}, gamePrefix={},"
@@ -173,16 +275,92 @@ public class VelocitySwapPlugin {
     }
 
     // =========================
+    // ADMIN PERMISSIONS
+    // =========================
+
+    void setupAdminPermissions() {
+        if (adminPlayers.isEmpty()) {
+            logger.info("No admins configured in config.yml");
+            return;
+        }
+
+        server.getScheduler()
+                .buildTask(
+                        this,
+                        () -> {
+                            try {
+                                var luckPerms = server.getPluginManager().getPlugin("luckperms");
+                                if (luckPerms.isEmpty()) {
+                                    logger.warn(
+                                            "LuckPerms not loaded - admin permissions not set!");
+                                    return;
+                                }
+
+                                net.luckperms.api.LuckPerms api =
+                                        net.luckperms.api.LuckPermsProvider.get();
+
+                                for (String playerName : adminPlayers) {
+                                    try {
+                                        UUID uuid =
+                                                api.getUserManager()
+                                                        .lookupUniqueId(playerName)
+                                                        .get();
+                                        if (uuid == null) {
+                                            logger.warn(
+                                                    "Could not find UUID for admin: {}",
+                                                    playerName);
+                                            continue;
+                                        }
+
+                                        var user = api.getUserManager().loadUser(uuid).get();
+                                        if (user == null) {
+                                            logger.warn(
+                                                    "Could not load user data for admin: {}",
+                                                    playerName);
+                                            continue;
+                                        }
+
+                                        user.data()
+                                                .add(
+                                                        net.luckperms.api.node.Node.builder(
+                                                                        "swap.admin")
+                                                                .build());
+                                        api.getUserManager().saveUser(user);
+                                        logger.info(
+                                                "Granted swap.admin permission to: {} ({})",
+                                                playerName,
+                                                uuid);
+
+                                    } catch (Exception e) {
+                                        logger.error(
+                                                "Failed to set admin permissions for {}: {}",
+                                                playerName,
+                                                e.getMessage());
+                                    }
+                                }
+                            } catch (Exception e) {
+                                logger.error(
+                                        "Failed to setup admin permissions: {}", e.getMessage());
+                            }
+                        })
+                .delay(2, TimeUnit.SECONDS)
+                .schedule();
+    }
+
+    // =========================
     // SERVER DETECTION
     // =========================
 
     void detectServers() {
-        gameServers.clear();
-
-        for (RegisteredServer rs : server.getAllServers()) {
-            String name = rs.getServerInfo().getName();
-            if (name.startsWith(gameServerPrefix)) {
-                gameServers.add(name);
+        if (dockerManager != null && dockerManager.isDockerEnabled()) {
+            gameServers = dockerManager.getRunningServers();
+        } else {
+            gameServers.clear();
+            for (RegisteredServer rs : server.getAllServers()) {
+                String name = rs.getServerInfo().getName();
+                if (name.startsWith(gameServerPrefix)) {
+                    gameServers.add(name);
+                }
             }
         }
 
@@ -200,7 +378,7 @@ public class VelocitySwapPlugin {
                 .buildTask(
                         this,
                         () -> {
-                            if (!gameRunning) return;
+                            if (gameState != GameState.RUNNING) return;
 
                             currentTime--;
 
@@ -506,7 +684,15 @@ public class VelocitySwapPlugin {
         ByteArrayDataInput in = ByteStreams.newDataInput(event.getData());
         String sub = in.readUTF();
 
-        if (sub.equals("finish")) {
+        if (sub.equals("ready")) {
+            event.setResult(PluginMessageEvent.ForwardResult.handled());
+            readyServers.add(serverName);
+            logger.info(
+                    "Server '{}' is ready ({}/{} servers ready)",
+                    serverName,
+                    readyServers.size(),
+                    gameServers.size());
+        } else if (sub.equals("finish")) {
             event.setResult(PluginMessageEvent.ForwardResult.handled());
             handleFinish(serverName);
         } else if (sub.equals("mode")) {
@@ -550,7 +736,7 @@ public class VelocitySwapPlugin {
         }
 
         // On game start: send config + reset to initialise the game server state.
-        if (gameRunning && pendingReset.remove(player.getUniqueId())) {
+        if (gameState == GameState.RUNNING && pendingReset.remove(player.getUniqueId())) {
             final boolean hotbar = saveHotbar;
             final int eyeTicks = eyeHoverTicks;
             sendToBackend(
@@ -585,7 +771,7 @@ public class VelocitySwapPlugin {
 
     private void handleFinish(String serverName) {
 
-        if (!gameRunning) return;
+        if (gameState != GameState.RUNNING) return;
 
         if (versusMode) {
             if (teamAServers.contains(serverName)) {
@@ -685,7 +871,7 @@ public class VelocitySwapPlugin {
     @Subscribe
     public void onChooseInitialServer(PlayerChooseInitialServerEvent event) {
         UUID uuid = event.getPlayer().getUniqueId();
-        if (!gameRunning) return;
+        if (gameState != GameState.RUNNING) return;
         if (!playerServer.containsKey(uuid)) return;
         if (spectators.contains(uuid)) return;
         String targetServer = playerServer.get(uuid);
@@ -702,13 +888,16 @@ public class VelocitySwapPlugin {
         final List<String> ADMIN_SUBS =
                 Arrays.asList(
                         "start",
+                        "resume",
                         "stop",
                         "forceswap",
                         "setrotation",
                         "spectate",
                         "setteam",
                         "setteamname",
-                        "setversus");
+                        "setversus",
+                        "state",
+                        "cleanup");
         final List<String> PLAYER_SUBS = Collections.singletonList("jointeam");
         final List<String> ALL_SUBS;
         {
@@ -734,6 +923,9 @@ public class VelocitySwapPlugin {
                             case "start":
                                 commands.cmdStart(src, rest);
                                 break;
+                            case "resume":
+                                commands.cmdResume(src, rest);
+                                break;
                             case "stop":
                                 commands.cmdStop(src, rest);
                                 break;
@@ -758,6 +950,12 @@ public class VelocitySwapPlugin {
                             case "setversus":
                                 commands.cmdSetVersus(src, rest);
                                 break;
+                            case "state":
+                                commands.cmdState(src);
+                                break;
+                            case "cleanup":
+                                commands.cmdCleanup(src, rest);
+                                break;
                             default:
                                 commands.sendHelp(src);
                                 break;
@@ -768,9 +966,7 @@ public class VelocitySwapPlugin {
                     public List<String> suggest(Invocation invocation) {
                         CommandSource src = invocation.source();
                         String[] args = invocation.arguments();
-                        boolean admin =
-                                (src instanceof ConsoleCommandSource)
-                                        || src.hasPermission("swap.admin");
+                        boolean admin = isAdmin(src);
 
                         // First token: suggest subcommand names
                         if (args.length <= 1) {
@@ -849,6 +1045,21 @@ public class VelocitySwapPlugin {
 
         detectServers();
 
+        // In Docker mode, servers are already healthy (checked by DockerServerManager)
+        // Mark them as ready
+        if (dockerMode && dockerManager != null) {
+            for (String serverName : gameServers) {
+                readyServers.add(serverName);
+            }
+            logger.info(
+                    "All {} game servers are ready (Docker health check passed)",
+                    gameServers.size());
+        }
+
+        startGameInternal();
+    }
+
+    private void startGameInternal() {
         List<Player> players = new ArrayList<>(getLobbyPlayers());
 
         playerServer.clear();
@@ -972,7 +1183,7 @@ public class VelocitySwapPlugin {
         }
 
         currentTime = rotationTime;
-        gameRunning = true;
+        gameState = GameState.RUNNING;
         pendingReset.addAll(playerServer.keySet());
 
         // Players already on their assigned server won't trigger onServerConnected –
@@ -1035,13 +1246,13 @@ public class VelocitySwapPlugin {
     // =========================
 
     void forceSwap() {
-        if (!gameRunning) return;
+        if (gameState != GameState.RUNNING) return;
         rotatePlayers();
         currentTime = rotationTime;
     }
 
     private void teamWins(String team) {
-        gameRunning = false;
+        gameState = GameState.LOBBY;
         String winnerName = "a".equalsIgnoreCase(team) ? teamNameA : teamNameB;
         for (Player player : getGameParticipants()) {
             String t = playerTeam.get(player.getUniqueId());
@@ -1059,7 +1270,7 @@ public class VelocitySwapPlugin {
     }
 
     void endGame() {
-        gameRunning = false;
+        gameState = GameState.LOBBY;
         watchingPlayers.clear();
         byte[] resetMsg = buildMessage(out -> out.writeUTF("reset"));
         for (Player player : getGameParticipants()) {
@@ -1078,5 +1289,29 @@ public class VelocitySwapPlugin {
     private void sendToLobby(Player player) {
         server.getServer(lobbyServerName)
                 .ifPresent(s -> player.createConnectionRequest(s).fireAndForget());
+    }
+
+    private boolean isAdmin(CommandSource source) {
+        if (source == this.server.getConsoleCommandSource()) {
+            return true;
+        }
+
+        if (source instanceof Player player) {
+            // Check config-based admins
+            String name = player.getUsername();
+            String uuid = player.getUniqueId().toString();
+            if (admins.contains(name) || admins.contains(uuid)) {
+                return true;
+            }
+
+            // Check LuckPerms permission
+            return source.hasPermission("swap.admin");
+        }
+
+        return false;
+    }
+
+    public PluginConfig getPluginConfig() {
+        return config;
     }
 }
