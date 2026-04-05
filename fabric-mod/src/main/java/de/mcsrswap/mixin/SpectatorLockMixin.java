@@ -12,11 +12,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class SpectatorLockMixin {
 
     /**
-     * Prevents a watching player from escaping their locked spectator camera.
-     * In vanilla, pressing Shift calls setCameraEntity(self) which releases the lock.
-     * We cancel that call as long as the player is in SwapMod's spectatorCameras map.
-     * The lock is only removed by Velocity sending a "prepare_return" or "become_spectator"
-     * messages, which go through SwapMod directly and bypass this injection.
+     * Prevents a watching player from escaping their locked spectator camera. In vanilla, pressing
+     * Shift calls setCameraEntity(self) which releases the lock. We cancel that call as long as the
+     * player is in SwapMod's spectatorCameras map. The lock is only removed by Velocity sending a
+     * "prepare_return" or "become_spectator" messages, which go through SwapMod directly and bypass
+     * this injection.
      */
     @Inject(method = "setCameraEntity", at = @At("HEAD"), cancellable = true)
     private void preventSpectatorEscape(Entity entity, CallbackInfo ci) {
