@@ -15,7 +15,10 @@ public class VelocityLang {
 
     private static final String[] BUNDLED = {"en_us.yml", "de_de.yml"};
 
-    public void load(Path dataDir, String filename) {
+    public void load(Path dataDir, String language) {
+        // Auto-append .yml if not present
+        String filename = language.endsWith(".yml") ? language : language.toLowerCase() + ".yml";
+
         Path langDir = dataDir.resolve("languages");
         try {
             if (!Files.exists(langDir)) {
