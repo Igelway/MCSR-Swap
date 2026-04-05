@@ -18,10 +18,11 @@
 
 3. **Admin commands**: Use `/ms <command>` (see main README for available commands)
 
-4. **Stop the services**:
-   ```bash
-   just down
-   ```
+## Available Commands
+
+- **`just up`** - Start all servers
+- **`just down`** - Stop all servers  
+- **`just attach <service>`** - Attach to server console (e.g. `just attach velocity`, `just attach lobby`, `just attach game1`)
 
 ## Configuration
 
