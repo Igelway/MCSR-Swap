@@ -154,6 +154,9 @@ public class VelocitySwapPlugin {
 
             Path configFile = dataDirectory.resolve("config.yml");
 
+            // Ensure config directory exists
+            Files.createDirectories(configFile.getParent());
+
             if (!Files.exists(configFile)) {
                 String defaultConfig =
                         "rotationTime: 120\n"
