@@ -7,6 +7,13 @@ MCSR-Swap is a multiplayer Minecraft speedrun format where players rotate betwee
 - **`fabric-mod/`** – Fabric mod running on each **Minecraft 1.16.1** game server (Yarn mappings `1.16.1+build.21`)
 - **`velocity-plugin/`** – Velocity proxy plugin coordinating all game servers (Velocity API 3.1.1)
 
+## Deployment Modes
+
+The project supports two deployment modes:
+
+1. **Manual Mode** (default) - Traditional setup with manually configured servers
+2. **Docker Mode** (optional) - Velocity plugin dynamically spawns/stops game server containers
+
 ## Architecture
 
 ```
@@ -15,8 +22,8 @@ Velocity proxy  ──plugin messages (mcsrswap:main)──►  Fabric mod (each
 ```
 
 All game logic is split:
-- **Velocity** owns: rotation timer, player routing, game state (running/stopped), config, commands
-- **Fabric mod** owns: world state, player state save/restore, scoreboard, goal detection (End portal), spectator lock
+- **Velocity** owns: rotation timer, player routing, game state (LOBBY/STARTING/RUNNING), config, commands, Docker orchestration
+- **Fabric mod** owns: world state, player state save/restore, scoreboard, goal detection (End portal), spectator lock, server freeze
 
 Communication uses Minecraft plugin messaging (`ByteArrayDataInput`/`ByteArrayDataOutput` via Guava `ByteStreams`). Messages are identified by a leading `writeUTF(type)` string.
 
@@ -92,18 +99,40 @@ Output: `velocity-plugin/target/mcsrswap-velocity-plugin-1.0.jar`
 ### Key classes
 | Class | Role |
 |---|---|
-| `VelocitySwapPlugin` | Main plugin; owns game loop, rotation timer, player routing, config, command registration |
-| `WorldSwapCommands` | All `/ms` subcommand implementations; permission check via `swap.admin` |
+| `VelocitySwapPlugin` | Main plugin; owns game loop, rotation timer, player routing, config, command registration, GameState management |
+| `WorldSwapCommands` | All `/ms` subcommand implementations; permission check via `swap.admin` or `admins` config list |
 | `VelocityLang` | Loads and serves language strings from `plugins/mcsrswap/languages/` |
+| `DockerServerManager` | (Docker mode only) Container orchestration; spawns/stops game server containers, health checks |
+| `GameState` | Enum: `LOBBY` (default), `STARTING` (containers starting), `RUNNING` (active game) |
+| `DockerServerManager` | (Optional) Docker integration; spawns/stops game server containers when `docker.enabled: true` |
 
 ### Config (`plugins/mcsrswap/config.yml`)
 All gameplay settings live here and are pushed to game servers at game start:
 - `rotationTime`, `requiredPercentage`, `versus`, `language`, `gameServerPrefix`, `lobbyServerName`
 - `spectateAfterWin`, `spectateTarget` (`next`/`prev`), `spectateMinTime`
 - `saveHotbar`, `eyeHoverTicks`
+- `admins` – List of player UUIDs or usernames with `swap.admin` permission (alternative to LuckPerms)
+
+#### Docker Mode (optional)
+When `docker.enabled: true`:
+- **`DockerServerManager`** dynamically spawns/stops game server containers via Docker API
+- Automatically triggered on `/ms start` – creates one container per required world
+- Containers use `ghcr.io/igelway/mcsr-swap-gameserver:latest` with fabric mod pre-installed
+- Server data persists in `./data/game{N}/ and ./data/lobby/` on host
+- Lobby server remains static in docker-compose.yml
+- `admins` – List of player UUIDs or usernames with `swap.admin` permission (alternative to LuckPerms)
+
+#### Docker Mode (optional)
+When `docker.enabled: true`:
+- **`DockerServerManager`** dynamically spawns/stops game server containers via Docker API
+- Automatically triggered on `/ms start` – creates one container per required world
+- Containers use `ghcr.io/igelway/mcsr-swap-gameserver:latest` with fabric mod pre-installed
+- Server data persists in `./data/game{N}/ and ./data/lobby/` on host
+- Lobby server remains static in docker-compose.yml
+- **Security Note:** Requires mounting Docker socket (`/var/run/docker.sock`) which grants root-equivalent host access
 
 ### Commands (`/ms`)
-Admin (`swap.admin`): `start`, `stop`, `forceswap`, `setrotation`, `spectate`, `setteam`, `setteamname`, `setversus`  
+Admin (`swap.admin` permission OR `admins` config): `start`, `stop`, `forceswap`, `setrotation`, `spectate`, `setteam`, `setteamname`, `setversus`, `state`, `cleanup`
 Player: `jointeam`
 
 Tab completion is implemented via `SimpleCommand.suggest()`.
@@ -130,3 +159,21 @@ Tab completion is implemented via `SimpleCommand.suggest()`.
 - Language keys follow snake_case (e.g. `game_finished`, `new_round`)
 - Fabric: `ServerTickEvents.END_SERVER_TICK` for all periodic logic; avoid `START_SERVER_TICK`
 - Avoid creative/spectator intermediate states during swap; always end in `GameMode.SURVIVAL`
+
+## Docker & CI/CD
+
+### Docker Images
+Built via GitHub Actions on tag push (`v*`):
+- **`ghcr.io/igelway/mcsr-swap-velocity:latest`** – Velocity proxy + plugin (Java 21)
+- **`ghcr.io/igelway/mcsr-swap-gameserver:latest`** – Fabric 1.16.1 server + mod (Java 17)
+
+### CI/CD Workflows
+- **`docker-build.yml`** – Builds both images on version tags, pushes to GitHub Container Registry
+- **`release.yml`** – Creates GitHub release with compiled JARs on version tags
+
+### Tech Stack
+- Java 21 (Velocity plugin + build tools)
+- Java 17 (Minecraft 1.16.1 servers, Fabric mod runtime)
+- Gradle 8.5 (Fabric mod)
+- Maven 3.9+ (Velocity plugin)
+- Docker Java API client 3.4.1 (optional, for dynamic server spawning)
