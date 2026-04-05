@@ -5,15 +5,22 @@ import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
 
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.command.v1.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.network.ServerSidePacketRegistry;
 
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+
 import net.minecraft.network.Packet;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.packet.s2c.play.SetCameraEntityS2CPacket;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.LiteralText;
 import net.minecraft.util.Identifier;
@@ -101,6 +108,11 @@ public class SwapMod implements ModInitializer {
     @Override
     public void onInitialize() {
         Lang.init();
+
+        // Register /view command for changing server view distance
+        CommandRegistrationCallback.EVENT.register((dispatcher, dedicated) ->
+            registerViewCommand(dispatcher)
+        );
 
         ServerLifecycleEvents.SERVER_STARTED.register(srv -> {
             INSTANCE = this;
@@ -258,6 +270,34 @@ public class SwapMod implements ModInitializer {
                 }
             }
         });
+    }
+
+    // =========================
+    // COMMANDS
+    // =========================
+
+    private static void registerViewCommand(CommandDispatcher<ServerCommandSource> dispatcher) {
+        dispatcher.register(CommandManager.literal("view")
+            .then(CommandManager.argument("distance", IntegerArgumentType.integer(2, 32))
+                .executes(SwapMod::executeViewCommand))
+        );
+    }
+
+    private static int executeViewCommand(CommandContext<ServerCommandSource> context) {
+        int distance = IntegerArgumentType.getInteger(context, "distance");
+        MinecraftServer server = context.getSource().getMinecraftServer();
+        
+        // Update view distance for all worlds
+        server.getWorlds().forEach(world -> {
+            world.getChunkManager().setViewDistance(distance);
+        });
+        
+        context.getSource().sendFeedback(
+            new LiteralText("Set view distance to " + distance + " chunks"), 
+            true // broadcast to ops
+        );
+        
+        return 1;
     }
 
     // =========================
