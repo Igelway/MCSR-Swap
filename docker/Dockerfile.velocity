@@ -1,5 +1,14 @@
 FROM eclipse-temurin:21-jre-jammy
 
+ARG PUID=1000
+ARG PGID=1000
+
+# create group/user to match host permissions
+RUN apt-get update && apt-get install -y \
+    gnupg2 passwd && rm -rf /var/lib/apt/lists/* || true
+RUN groupadd -g ${PGID} minecraft || true && \
+    useradd -u ${PUID} -g ${PGID} -m -s /bin/sh minecraft || true
+
 WORKDIR /data
 
 # Install dependencies
@@ -24,6 +33,9 @@ COPY config-templates/velocity/ /opt/config-template/
 # Copy entrypoint script
 COPY docker/velocity-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+
+# ensure correct ownership for files
+RUN chown -R minecraft:minecraft /opt/app-files /opt/config-template || true
 
 # Environment variables
 ENV MCSRSWAP_DOCKER_MODE=true

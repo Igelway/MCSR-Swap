@@ -14,7 +14,8 @@ if [ -n "$VELOCITY_SECRET_FILE" ] && [ -f "$VELOCITY_SECRET_FILE" ]; then
   SECRET=$(cat "$VELOCITY_SECRET_FILE")
 
   # Update or create FabricProxy.toml with secret
-  cat >/data/config/FabricProxy.toml <<EOF
+  mkdir -p /data/config/FabricProxy
+  cat >/data/config/FabricProxy/FabricProxy.toml <<EOF
 # FabricProxy Configuration
 hackOnlineMode = true
 hackEarlySend = false
@@ -63,5 +64,14 @@ create_symlinks() {
 create_symlinks "/opt/app-files/mods" "/data/mods"
 
 echo "Starting Minecraft server..."
+
+# PUID/PGID support (for itzg/minecraft-server compatibility)
+if [ -n "$PUID" ]; then
+  export UID="$PUID"
+fi
+if [ -n "$PGID" ]; then
+  export GID="$PGID"
+fi
+
 # Start the Minecraft server using the base image's entrypoint
 exec /start
