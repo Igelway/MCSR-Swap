@@ -97,6 +97,10 @@ down:
 logs:
     docker compose logs -f
 
+# Attach to server console (velocity, lobby, game1, game2, etc.)
+attach service:
+    docker attach "mcsrswap-{{service}}"
+
 # Pull latest Docker images
 pull:
     docker compose pull
