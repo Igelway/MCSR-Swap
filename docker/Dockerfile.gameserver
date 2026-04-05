@@ -1,5 +1,8 @@
 FROM itzg/minecraft-server:java21
 
+ARG PUID=1000
+ARG PGID=1000
+
 ENV TYPE=FABRIC \
     VERSION=1.16.1 \
     FABRIC_LOADER_VERSION=0.16.0 \
@@ -15,8 +18,12 @@ RUN apt-get update && \
     apt-get install -y curl && \
     rm -rf /var/lib/apt/lists/*
 
+# adjust minecraft user/group to match host
+RUN if getent group minecraft >/dev/null 2>&1; then groupmod -g ${PGID} minecraft || true; else groupadd -g ${PGID} minecraft || true; fi && \
+    if id -u minecraft >/dev/null 2>&1; then usermod -u ${PUID} -g ${PGID} minecraft || true; else useradd -u ${PUID} -g ${PGID} -m -s /bin/sh minecraft || true; fi || true
+
 # Create directories
-RUN mkdir -p /opt/app-files/mods /opt/config-template
+RUN mkdir -p /opt/app-files/mods /opt/config-template && chown -R minecraft:minecraft /opt/app-files /opt/config-template || true
 
 # Download required mods
 RUN cd /opt/app-files/mods && \
