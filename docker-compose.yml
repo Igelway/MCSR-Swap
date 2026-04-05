@@ -9,7 +9,7 @@ services:
       - docker-proxy
       - lobby
     volumes:
-      - ./data:/data
+      - ./data/velocity:/data
     environment:
       MCSRSWAP_DOCKER_MODE: "true"
       PUID: ${PUID:-1000}
@@ -49,8 +49,6 @@ services:
        - ALLOW_RESTARTS=1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # Optional: mount local config folder (docker/config/docker-socket-proxy)
-      - ./docker/config/docker-socket-proxy:/config:ro
     networks:
       - mcsrswap-network
 
