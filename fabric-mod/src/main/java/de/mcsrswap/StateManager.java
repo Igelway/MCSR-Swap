@@ -1,12 +1,19 @@
 package de.mcsrswap;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.ai.brain.MemoryModuleType;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
 import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -18,21 +25,17 @@ import net.minecraft.util.math.Box;
 import net.minecraft.world.GameMode;
 import net.minecraft.world.World;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
-
 public class StateManager {
 
     MinecraftServer server;
     PlayerState currentState = null;
     boolean saveHotbar = true;
-    /** Joining player's own hotbar preference captured at ENTITY_LOAD, before restoreState fires. */
+
+    /**
+     * Joining player's own hotbar preference captured at ENTITY_LOAD, before restoreState fires.
+     */
     final Map<UUID, Item[]> hotbarPreferences = new HashMap<>();
+
     final Map<UUID, Integer> clearRegenAfter = new HashMap<>();
 
     void setServer(MinecraftServer srv) {
@@ -50,49 +53,50 @@ public class StateManager {
     void saveState(ServerPlayerEntity p) {
         PlayerState s = new PlayerState();
 
-        s.ownerUuid    = p.getUuid();
+        s.ownerUuid = p.getUuid();
 
-        s.worldKey     = p.world.getRegistryKey();
-        s.x            = p.getX();
-        s.y            = p.getY();
-        s.z            = p.getZ();
-        s.yaw          = p.yaw;
-        s.pitch        = p.pitch;
+        s.worldKey = p.world.getRegistryKey();
+        s.x = p.getX();
+        s.y = p.getY();
+        s.z = p.getZ();
+        s.yaw = p.yaw;
+        s.pitch = p.pitch;
 
-        s.inventory    = p.inventory.serialize(new ListTag());
-        s.enderChest   = serializeInventory(p.getEnderChestInventory());
+        s.inventory = p.inventory.serialize(new ListTag());
+        s.enderChest = serializeInventory(p.getEnderChestInventory());
 
-        s.health       = p.getHealth();
-        s.food         = p.getHungerManager().getFoodLevel();
-        s.saturation   = p.getHungerManager().getSaturationLevel();
+        s.health = p.getHealth();
+        s.food = p.getHungerManager().getFoodLevel();
+        s.saturation = p.getHungerManager().getSaturationLevel();
 
-        s.expLevel     = p.experienceLevel;
-        s.expProgress  = p.experienceProgress;
+        s.expLevel = p.experienceLevel;
+        s.expProgress = p.experienceProgress;
         s.totalExperience = p.totalExperience;
 
-        s.fireTicks    = p.getFireTicks();
+        s.fireTicks = p.getFireTicks();
         s.fallDistance = p.fallDistance;
         s.netherPortalCooldown = p.netherPortalCooldown;
-        s.swimming     = p.isSwimming();
-        s.fallFlying   = p.isFallFlying();
-        s.vehicleUuid  = (p.hasVehicle() && p.getVehicle() != null) ? p.getVehicle().getUuid() : null;
+        s.swimming = p.isSwimming();
+        s.fallFlying = p.isFallFlying();
+        s.vehicleUuid =
+                (p.hasVehicle() && p.getVehicle() != null) ? p.getVehicle().getUuid() : null;
         // Eject the player immediately so the vehicle stays in the world after disconnect.
         // This ensures the UUID lookup in restoreState will succeed for the next player.
         if (s.vehicleUuid != null) p.stopRiding();
 
         s.statusEffects = new ArrayList<>();
         for (StatusEffectInstance effect : p.getStatusEffects()) {
-            s.statusEffects.add(new StatusEffectInstance(
-                    effect.getEffectType(),
-                    effect.getDuration(),
-                    effect.getAmplifier(),
-                    effect.isAmbient(),
-                    effect.shouldShowParticles()
-            ));
+            s.statusEffects.add(
+                    new StatusEffectInstance(
+                            effect.getEffectType(),
+                            effect.getDuration(),
+                            effect.getAmplifier(),
+                            effect.isAmbient(),
+                            effect.shouldShowParticles()));
         }
 
         // Copy spawn point (bed / respawn anchor)
-        s.spawnPointPosition  = p.getSpawnPointPosition();   // null if no custom spawn
+        s.spawnPointPosition = p.getSpawnPointPosition(); // null if no custom spawn
         s.spawnPointDimension = p.getSpawnPointDimension();
         // isSpawnForced() does not exist in 1.16.1 Yarn; forced is always false in practice
         s.spawnForced = false;
@@ -141,20 +145,21 @@ public class StateManager {
         // Vital stats
         p.setHealth(Math.min(s.health, p.getMaxHealth()));
         p.getHungerManager().setFoodLevel(s.food);
-        ((de.mcsrswap.mixin.HungerManagerAccessor) p.getHungerManager()).setSaturationLevel(s.saturation);
+        ((de.mcsrswap.mixin.HungerManagerAccessor) p.getHungerManager())
+                .setSaturationLevel(s.saturation);
 
         // XP – restore all three fields before sending the packet to avoid
         // the server's own join-sequence packet overriding us with stale data.
-        p.experienceLevel    = s.expLevel;
+        p.experienceLevel = s.expLevel;
         p.experienceProgress = s.expProgress;
-        p.totalExperience    = s.totalExperience;
-        // Vanilla auto-sync calls: new ExperienceBarUpdateS2CPacket(expProgress, totalExperience, expLevel)
+        p.totalExperience = s.totalExperience;
+        // Vanilla auto-sync calls: new ExperienceBarUpdateS2CPacket(expProgress, totalExperience,
+        // expLevel)
         // The constructor is (float barProgress, int experienceLevel, int experience) but the wire
         // and client read order swaps the last two: experience (2nd on wire) → displayed level,
         // experienceLevel (3rd on wire) → raw XP total. Mirror vanilla's order exactly.
         p.networkHandler.sendPacket(
-                new ExperienceBarUpdateS2CPacket(s.expProgress, s.totalExperience, s.expLevel)
-        );
+                new ExperienceBarUpdateS2CPacket(s.expProgress, s.totalExperience, s.expLevel));
 
         // Fire: restore from saved ticks; extinguish if not on fire
         if (s.fireTicks > 0) {
@@ -183,10 +188,10 @@ public class StateManager {
         // If spawnPointPosition is null, the spawn is cleared → Vanilla uses the world spawn.
         p.setSpawnPoint(
                 s.spawnPointDimension != null ? s.spawnPointDimension : World.OVERWORLD,
-                s.spawnPointPosition,   // null = no custom spawn
+                s.spawnPointPosition, // null = no custom spawn
                 s.spawnForced,
-                false                   // no chat feedback
-        );
+                false // no chat feedback
+                );
 
         // Disable join invincibility – immediately and for the next 20 ticks,
         // so that Purpur or other mods don't reset the invincibility after our clear.
@@ -195,33 +200,38 @@ public class StateManager {
     }
 
     /**
-     * Remaps all ANGRY_AT brain memories within a 50-block radius (fromUuid → toUuid).
-     * Covers Piglins, Bees, and any other mob that uses this memory type.
+     * Remaps all ANGRY_AT brain memories within a 50-block radius (fromUuid → toUuid). Covers
+     * Piglins, Bees, and any other mob that uses this memory type.
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    void transferMobAnger(ServerWorld world, UUID fromUuid, UUID toUuid,
-                           double x, double y, double z) {
+    void transferMobAnger(
+            ServerWorld world, UUID fromUuid, UUID toUuid, double x, double y, double z) {
         Box area = new Box(x - 50, y - 50, z - 50, x + 50, y + 50, z + 50);
-        world.getEntities((Entity) null, area, e -> e instanceof MobEntity).forEach(entity -> {
-            MobEntity mob = (MobEntity) entity;
-            // Get the raw Memory object (including TTL) instead of just the value
-            Map<?, Optional<?>> memories = ((de.mcsrswap.mixin.BrainMemoriesAccessor) mob.getBrain()).getMemories();
-            Optional<?> memOpt = memories.get(MemoryModuleType.ANGRY_AT);
-            if (memOpt == null || !memOpt.isPresent()) return;
+        world.getEntities((Entity) null, area, e -> e instanceof MobEntity)
+                .forEach(
+                        entity -> {
+                            MobEntity mob = (MobEntity) entity;
+                            // Get the raw Memory object (including TTL) instead of just the value
+                            Map<?, Optional<?>> memories =
+                                    ((de.mcsrswap.mixin.BrainMemoriesAccessor) mob.getBrain())
+                                            .getMemories();
+                            Optional<?> memOpt = memories.get(MemoryModuleType.ANGRY_AT);
+                            if (memOpt == null || !memOpt.isPresent()) return;
 
-            net.minecraft.entity.ai.brain.Memory<?> mem =
-                    (net.minecraft.entity.ai.brain.Memory<?>) memOpt.get();
-            if (!fromUuid.equals(mem.getValue())) return;
+                            net.minecraft.entity.ai.brain.Memory<?> mem =
+                                    (net.minecraft.entity.ai.brain.Memory<?>) memOpt.get();
+                            if (!fromUuid.equals(mem.getValue())) return;
 
-            // Preserve the original TTL; 0 means "no expiry" – keep it as 0
-            long ttl = ((de.mcsrswap.mixin.MemoryExpiryAccessor) mem).getExpiry();
-            mob.getBrain().remember(MemoryModuleType.ANGRY_AT, toUuid, ttl);
-        });
+                            // Preserve the original TTL; 0 means "no expiry" – keep it as 0
+                            long ttl = ((de.mcsrswap.mixin.MemoryExpiryAccessor) mem).getExpiry();
+                            mob.getBrain().remember(MemoryModuleType.ANGRY_AT, toUuid, ttl);
+                        });
     }
 
     /** Iterate clearRegenAfter, decrement, clear timeUntilRegen each tick. */
     void tickClearRegen(MinecraftServer srv) {
-        for (Iterator<Map.Entry<UUID, Integer>> it = clearRegenAfter.entrySet().iterator(); it.hasNext(); ) {
+        for (Iterator<Map.Entry<UUID, Integer>> it = clearRegenAfter.entrySet().iterator();
+                it.hasNext(); ) {
             Map.Entry<UUID, Integer> entry = it.next();
             int remaining = entry.getValue() - 1;
             ServerPlayerEntity p = srv.getPlayerManager().getPlayer(entry.getKey());
@@ -232,10 +242,10 @@ public class StateManager {
     }
 
     /**
-     * Rearranges the new player's hotbar (slots 0-8) according to the joining player's
-     * own preferred layout, captured just before restoreState from their own server NBT.
-     * For each preferred slot, we scan the predecessor's hotbar for a matching item type
-     * and swap it into place. Only hotbar slots are ever touched.
+     * Rearranges the new player's hotbar (slots 0-8) according to the joining player's own
+     * preferred layout, captured just before restoreState from their own server NBT. For each
+     * preferred slot, we scan the predecessor's hotbar for a matching item type and swap it into
+     * place. Only hotbar slots are ever touched.
      */
     private static void rearrangeHotbar(ServerPlayerEntity p, Item[] preference) {
         for (int targetSlot = 0; targetSlot < 9; targetSlot++) {
@@ -283,14 +293,16 @@ public class StateManager {
         hotbarPreferences.keySet().retainAll(online);
     }
 
-    /** Clears the saved inventory and XP so the next player inherits an empty slot list and
-     *  zero experience. Called when the active player dies; their items remain as dropped
-     *  entities in the world. */
+    /**
+     * Clears the saved inventory and XP so the next player inherits an empty slot list and zero
+     * experience. Called when the active player dies; their items remain as dropped entities in the
+     * world.
+     */
     void clearInventory() {
         if (currentState == null) return;
         currentState.inventory = new ListTag();
         currentState.enderChest = new ListTag();
-        currentState.expLevel    = 0;
+        currentState.expLevel = 0;
         currentState.expProgress = 0.0f;
         currentState.totalExperience = 0;
     }

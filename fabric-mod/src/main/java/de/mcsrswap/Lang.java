@@ -1,7 +1,5 @@
 package de.mcsrswap;
 
-import net.fabricmc.loader.api.FabricLoader;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -13,10 +11,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import net.fabricmc.loader.api.FabricLoader;
 
 /**
- * Per-player localised strings, loaded from config/worldswap/languages/.
- * Locale is captured via LocaleCaptureMixin when the client sends settings.
+ * Per-player localised strings, loaded from config/worldswap/languages/. Locale is captured via
+ * LocaleCaptureMixin when the client sends settings.
  */
 public class Lang {
 
@@ -24,39 +23,46 @@ public class Lang {
 
     /** locale code → key → message */
     private static final Map<String, Map<String, String>> tables = new HashMap<>();
+
     private static final Map<UUID, String> locales = new HashMap<>();
 
     // ── Init ──────────────────────────────────────────────────────────────
 
     public static void init() {
-        Path langDir = FabricLoader.getInstance().getConfigDir()
-                .resolve("worldswap").resolve("languages");
+        Path langDir =
+                FabricLoader.getInstance().getConfigDir().resolve("worldswap").resolve("languages");
         try {
             if (!Files.exists(langDir)) Files.createDirectories(langDir);
             for (String filename : BUNDLED) {
                 Path target = langDir.resolve(filename);
                 if (!Files.exists(target)) {
-                    try (InputStream in = Lang.class.getResourceAsStream("/languages/" + filename)) {
+                    try (InputStream in =
+                            Lang.class.getResourceAsStream("/languages/" + filename)) {
                         if (in != null) Files.copy(in, target);
                     }
                 }
                 loadFile(filename.replace(".properties", ""), langDir.resolve(filename));
             }
         } catch (IOException e) {
-            System.err.println("[WorldSwap] Failed to initialise language files: " + e.getMessage());
+            System.err.println(
+                    "[WorldSwap] Failed to initialise language files: " + e.getMessage());
         }
     }
 
     private static void loadFile(String localeCode, Path file) {
         Properties props = new Properties();
         try (InputStream in = Files.newInputStream(file);
-             InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
+                InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
             props.load(reader);
             Map<String, String> map = new HashMap<>();
             props.forEach((k, v) -> map.put(String.valueOf(k), String.valueOf(v)));
             tables.put(localeCode, map);
         } catch (IOException e) {
-            System.err.println("[WorldSwap] Failed to load language file " + file.getFileName() + ": " + e.getMessage());
+            System.err.println(
+                    "[WorldSwap] Failed to load language file "
+                            + file.getFileName()
+                            + ": "
+                            + e.getMessage());
         }
     }
 
@@ -102,15 +108,21 @@ public class Lang {
 
     // ── Convenience wrappers ──────────────────────────────────────────────
 
-    public static String gameFinished(UUID uuid) { return get(uuid, "game_finished"); }
+    public static String gameFinished(UUID uuid) {
+        return get(uuid, "game_finished");
+    }
 
-    public static String newRound(UUID uuid) { return get(uuid, "new_round"); }
+    public static String newRound(UUID uuid) {
+        return get(uuid, "new_round");
+    }
 
     public static String scoreProgress(UUID uuid, int done, int required) {
         return get(uuid, "scoreboard_progress") + ": §e" + done + "/" + required;
     }
 
-    public static String scoreGoal(UUID uuid) { return get(uuid, "scoreboard_goal"); }
+    public static String scoreGoal(UUID uuid) {
+        return get(uuid, "scoreboard_goal");
+    }
 
     public static String timer(UUID uuid, int seconds) {
         return get(uuid, "scoreboard_timer", "seconds", String.valueOf(seconds));

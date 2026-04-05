@@ -1,7 +1,5 @@
 package de.mcsrswap;
 
-import org.yaml.snakeyaml.Yaml;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -9,6 +7,7 @@ import java.nio.file.Path;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import org.yaml.snakeyaml.Yaml;
 
 public class VelocityLang {
 
@@ -27,7 +26,8 @@ public class VelocityLang {
             for (String bundled : BUNDLED) {
                 Path target = langDir.resolve(bundled);
                 if (!Files.exists(target)) {
-                    try (InputStream in = VelocityLang.class.getResourceAsStream("/languages/" + bundled)) {
+                    try (InputStream in =
+                            VelocityLang.class.getResourceAsStream("/languages/" + bundled)) {
                         if (in != null) Files.copy(in, target);
                     }
                 }
@@ -35,7 +35,10 @@ public class VelocityLang {
 
             Path langFile = langDir.resolve(filename);
             if (!Files.exists(langFile)) {
-                System.err.println("[SwapPlugin] Language file not found: " + filename + " – falling back to en_us.yml");
+                System.err.println(
+                        "[SwapPlugin] Language file not found: "
+                                + filename
+                                + " – falling back to en_us.yml");
                 langFile = langDir.resolve("en_us.yml");
             }
 
@@ -60,8 +63,8 @@ public class VelocityLang {
     }
 
     /**
-     * Returns the message for the given key with placeholder substitution.
-     * Pass pairs of (placeholderName, value): e.g. get("game_team_loses", "team", "A")
+     * Returns the message for the given key with placeholder substitution. Pass pairs of
+     * (placeholderName, value): e.g. get("game_team_loses", "team", "A")
      */
     public String get(String key, String... pairs) {
         String s = get(key);
