@@ -9,10 +9,25 @@ MCSR-Swap is a multiplayer Minecraft speedrun format where players rotate betwee
 
 ## Deployment Modes
 
-The project supports two deployment modes:
+The project supports two deployment modes and **both must remain fully supported**:
 
-1. **Manual Mode** (default) - Traditional setup with manually configured servers
-2. **Docker Mode** (optional) - Velocity plugin dynamically spawns/stops game server containers
+### 1. Manual Mode (Traditional)
+- Game servers are **externally managed** (started manually or via systemd/scripts)
+- Servers run on **fixed ports** in a configurable range (e.g., localhost:25600-25650)
+- Worlds are **pre-generated** before gameplay starts
+- Lobby server also runs on a fixed port (e.g., localhost:25565)
+- Velocity plugin connects to these existing servers
+- **Deployment flexibility**: Velocity/Lobby can run anywhere (bare metal, Docker, etc.)
+
+### 2. Docker Mode (Recommended for convenience)
+- Velocity plugin **dynamically spawns/stops** game server containers on-demand
+- Uses **Docker named volumes** for game server data (`mcsrswap-game{N}`)
+- Velocity/Lobby typically run in Docker Compose setup, but **not required**
+- Security: Uses `tecnativa/docker-socket-proxy` to restrict Docker API access
+- Commands: `/ms start` (cleanup + spawn), `/ms resume` (reuse existing), `/ms cleanup` (remove containers + volumes)
+- Container lifecycle: Servers persist after game ends; manual cleanup via `/ms cleanup`
+
+**See [docker-architecture.md](docker-architecture.md) for detailed Docker deployment documentation.**
 
 ## Architecture
 
@@ -99,41 +114,44 @@ Output: `velocity-plugin/target/mcsrswap-velocity-plugin-1.0.jar`
 ### Key classes
 | Class | Role |
 |---|---|
-| `VelocitySwapPlugin` | Main plugin; owns game loop, rotation timer, player routing, config, command registration, GameState management |
+| `VelocitySwapPlugin` | Main plugin; owns game loop, rotation timer, player routing, config, command registration, GameState management, Docker orchestration (when enabled) |
 | `WorldSwapCommands` | All `/ms` subcommand implementations; permission check via `swap.admin` or `admins` config list |
 | `VelocityLang` | Loads and serves language strings from `plugins/mcsrswap/languages/` |
-| `DockerServerManager` | (Docker mode only) Container orchestration; spawns/stops game server containers, health checks |
+| `PluginConfig` | Type-safe config class; loads from `plugins/mcsrswap/config.yml`, applies ENV overrides (e.g., `MCSRSWAP_LOBBY_ADDRESS`, `MCSRSWAP_GAMESERVER_IMAGE`), sanitizes values (e.g., language file extension, percentage validation) |
+| `DockerServerManager` | (Docker mode only) Container orchestration; spawns/stops game server containers, manages named volumes, health checks, seed generation for versus mode |
 | `GameState` | Enum: `LOBBY` (default), `STARTING` (containers starting), `RUNNING` (active game) |
-| `DockerServerManager` | (Optional) Docker integration; spawns/stops game server containers when `docker.enabled: true` |
 
 ### Config (`plugins/mcsrswap/config.yml`)
-All gameplay settings live here and are pushed to game servers at game start:
+All gameplay settings are loaded from YAML into `PluginConfig` and pushed to game servers at game start:
 - `rotationTime`, `requiredPercentage`, `versus`, `language`, `gameServerPrefix`, `lobbyServerName`
 - `spectateAfterWin`, `spectateTarget` (`next`/`prev`), `spectateMinTime`
 - `saveHotbar`, `eyeHoverTicks`
 - `admins` – List of player UUIDs or usernames with `swap.admin` permission (alternative to LuckPerms)
+- Config values can be **sanitized** in `PluginConfig` constructor (e.g., stripping `.yml` from language, clamping percentages to 0.0-1.0)
+
+#### Manual Mode (default)
+When `docker.enabled: false` or unset:
+- `gameServers` – List of server names that must be pre-registered in Velocity's `velocity.toml`
+- Servers run on fixed ports (e.g., localhost:25600, localhost:25601, etc.)
+- All servers must be started **before** `/ms start` is issued
 
 #### Docker Mode (optional)
 When `docker.enabled: true`:
-- **`DockerServerManager`** dynamically spawns/stops game server containers via Docker API
-- Automatically triggered on `/ms start` – creates one container per required world
-- Containers use `ghcr.io/igelway/mcsr-swap-gameserver:latest` with fabric mod pre-installed
-- Server data persists in `./data/game{N}/ and ./data/lobby/` on host
-- Lobby server remains static in docker-compose.yml
-- `admins` – List of player UUIDs or usernames with `swap.admin` permission (alternative to LuckPerms)
-
-#### Docker Mode (optional)
-When `docker.enabled: true`:
-- **`DockerServerManager`** dynamically spawns/stops game server containers via Docker API
-- Automatically triggered on `/ms start` – creates one container per required world
-- Containers use `ghcr.io/igelway/mcsr-swap-gameserver:latest` with fabric mod pre-installed
-- Server data persists in `./data/game{N}/ and ./data/lobby/` on host
-- Lobby server remains static in docker-compose.yml
-- **Security Note:** Requires mounting Docker socket (`/var/run/docker.sock`) which grants root-equivalent host access
+- **`DockerServerManager`** dynamically spawns/stops game server containers via `tecnativa/docker-socket-proxy`
+- Automatically triggered on `/ms start` (with cleanup) or `/ms resume` (reuse existing containers)
+- Containers use `ghcr.io/{owner}/mcsr-swap-gameserver:v{version}` with Fabric mod pre-installed
+- Game server data persists in **Docker named volumes** (`mcsrswap-game{N}`)
+- Velocity/Lobby data in **bind mounts** (`./data/velocity`, `./data/lobby`)
+- `/ms cleanup` stops containers and deletes volumes
+- **Security Note:** Requires Docker socket access (via proxy) which should be restricted to trusted environments
 
 ### Commands (`/ms`)
-Admin (`swap.admin` permission OR `admins` config): `start`, `stop`, `forceswap`, `setrotation`, `spectate`, `setteam`, `setteamname`, `setversus`, `state`, `cleanup`
+Admin (`swap.admin` permission OR `admins` config): `start`, `resume`, `stop`, `forceswap`, `setrotation`, `spectate`, `setteam`, `setteamname`, `setversus`, `state`, `cleanup`
 Player: `jointeam`
+
+- **`/ms start`**: Cleanup old containers/volumes, then start fresh game
+- **`/ms resume`**: Resume game with existing containers/volumes (no cleanup)
+- **`/ms cleanup`**: Stop containers and delete volumes (Docker mode only)
 
 Tab completion is implemented via `SimpleCommand.suggest()`.
 
@@ -176,4 +194,5 @@ Built via GitHub Actions on tag push (`v*`):
 - Java 17 (Minecraft 1.16.1 servers, Fabric mod runtime)
 - Gradle 8.5 (Fabric mod)
 - Maven 3.9+ (Velocity plugin)
-- Docker Java API client 3.4.1 (optional, for dynamic server spawning)
+- Docker Java API client 3.4.1 (optional, for dynamic server spawning via `tecnativa/docker-socket-proxy`)
+- Spotless (code formatting: Google Java Format AOSP style)
