@@ -8,6 +8,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 import net.kyori.adventure.text.Component;
 
 public class WorldSwapCommands {
@@ -28,11 +29,23 @@ public class WorldSwapCommands {
 
     /**
      * Returns true if the source is allowed to use admin commands. Console always has access.
-     * Players need the "swap.admin" permission (granted via a permissions plugin such as
-     * LuckPerms).
+     * Players need the "swap.admin" permission (granted via a permissions plugin such as LuckPerms)
+     * OR be listed in config.yml admins list.
      */
     private boolean isAdmin(CommandSource src) {
-        return src instanceof ConsoleCommandSource || src.hasPermission("swap.admin");
+        if (src instanceof ConsoleCommandSource) {
+            return true;
+        }
+        if (src.hasPermission("swap.admin")) {
+            return true;
+        }
+        if (src instanceof Player) {
+            Player player = (Player) src;
+            String username = player.getUsername();
+            String uuid = player.getUniqueId().toString();
+            return plugin.adminPlayers.contains(username) || plugin.adminPlayers.contains(uuid);
+        }
+        return false;
     }
 
     /**
@@ -51,7 +64,8 @@ public class WorldSwapCommands {
             src.sendMessage(Component.text("§7/ms setrotation <s> §8| §7/ms spectate <player>"));
             src.sendMessage(Component.text("§7/ms setteam <a|b|none> <player...> §8"));
             src.sendMessage(Component.text("§7/ms setteamname <a|b> <name>"));
-            src.sendMessage(Component.text("§7/ms setversus <true|false>"));
+            src.sendMessage(Component.text("§7/ms setversus <true|false> §8| §7/ms state"));
+            src.sendMessage(Component.text("§7/ms cleanup §8- §7Stop Docker containers"));
         }
         src.sendMessage(Component.text("§7/ms jointeam <a|b>"));
     }
@@ -61,8 +75,84 @@ public class WorldSwapCommands {
             src.sendMessage(Component.text("§cNo permission!"));
             return;
         }
-        if (plugin.gameRunning) {
+        if (plugin.gameState == GameState.RUNNING) {
             src.sendMessage(Component.text("§cGame is already running!"));
+            return;
+        }
+        if (plugin.gameState == GameState.STARTING) {
+            src.sendMessage(Component.text("§cGame is already starting, please wait..."));
+            return;
+        }
+
+        // Cleanup before starting in Docker mode
+        if (plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
+            src.sendMessage(Component.text("§7Cleaning up old containers and volumes..."));
+            cmdCleanup(src, args);
+        }
+
+        cmdResume(src, args);
+    }
+
+    void cmdResume(CommandSource src, String[] args) {
+        if (!isAdmin(src)) {
+            src.sendMessage(Component.text("§cNo permission!"));
+            return;
+        }
+        if (plugin.gameState == GameState.RUNNING) {
+            src.sendMessage(Component.text("§cGame is already running!"));
+            return;
+        }
+        if (plugin.gameState == GameState.STARTING) {
+            src.sendMessage(Component.text("§cGame is already starting, please wait..."));
+            return;
+        }
+
+        if (plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
+            List<Player> participants =
+                    plugin.server.getAllPlayers().stream()
+                            .filter(p -> !plugin.spectators.contains(p.getUniqueId()))
+                            .collect(Collectors.toList());
+
+            if (participants.isEmpty()) {
+                src.sendMessage(Component.text("§cNo players to start the game!"));
+                return;
+            }
+
+            int serverCount = participants.size();
+            src.sendMessage(Component.text("§7Starting " + serverCount + " Docker containers…"));
+
+            // Mark game as starting to prevent double-start
+            plugin.gameState = GameState.STARTING;
+
+            // Generate seed for versus mode (all teams get same seeds)
+            Long seed = plugin.versusMode ? new java.util.Random().nextLong() : null;
+
+            // Start servers and wait for them to become healthy
+            plugin.dockerManager
+                    .startServersAsync(serverCount, seed)
+                    .thenAccept(
+                            startedServers -> {
+                                if (startedServers.isEmpty()) {
+                                    src.sendMessage(
+                                            Component.text("§cFailed to start Docker containers!"));
+                                    plugin.gameState = GameState.LOBBY;
+                                    return;
+                                }
+
+                                plugin.gameServers = startedServers;
+                                src.sendMessage(
+                                        Component.text("§aServers healthy, starting game…"));
+                                plugin.startGame();
+                            })
+                    .exceptionally(
+                            ex -> {
+                                src.sendMessage(
+                                        Component.text(
+                                                "§cError starting containers: " + ex.getMessage()));
+                                plugin.gameState = GameState.LOBBY;
+                                return null;
+                            });
+
             return;
         }
 
@@ -129,7 +219,47 @@ public class WorldSwapCommands {
             src.sendMessage(Component.text("§cNo permission!"));
             return;
         }
+        if (plugin.gameState == GameState.LOBBY) {
+            src.sendMessage(Component.text("§cNo game is running!"));
+            return;
+        }
+        if (plugin.gameState == GameState.STARTING) {
+            src.sendMessage(
+                    Component.text("§cGame is still starting, please wait or restart the server."));
+            return;
+        }
+        // Move all players to lobby and end game
+        src.sendMessage(Component.text("§7Stopping game, moving players to lobby..."));
         plugin.endGame();
+        src.sendMessage(
+                Component.text(
+                        "§aGame stopped. Servers are still running - use §e/ms cleanup§a to stop"
+                                + " them."));
+    }
+
+    void cmdCleanup(CommandSource src, String[] args) {
+        if (!isAdmin(src)) {
+            src.sendMessage(Component.text("§cNo permission!"));
+            return;
+        }
+        if (plugin.gameState == GameState.RUNNING) {
+            src.sendMessage(Component.text("§cGame is still running! Use §e/ms stop§c first."));
+            return;
+        }
+        if (plugin.dockerManager == null || !plugin.dockerManager.isDockerEnabled()) {
+            src.sendMessage(Component.text("§cDocker mode is not enabled."));
+            return;
+        }
+        src.sendMessage(Component.text("§7Stopping Docker containers and removing data..."));
+        try {
+            plugin.dockerManager.stopAllServers();
+            plugin.dockerManager.removeAllData();
+            src.sendMessage(
+                    Component.text("§aAll game server containers stopped and data removed."));
+        } catch (Exception e) {
+            src.sendMessage(Component.text("§cCleanup failed. Check logs for details."));
+            plugin.getLogger().error("Cleanup failed", e);
+        }
     }
 
     void cmdForceSwap(CommandSource src, String[] args) {
@@ -202,7 +332,7 @@ public class WorldSwapCommands {
                                 // If the game is running the player is currently on a game server –
                                 // send them
                                 // to the lobby immediately so they are not still actively playing.
-                                if (plugin.gameRunning) {
+                                if (plugin.gameState == GameState.RUNNING) {
                                     plugin.server
                                             .getServer(plugin.lobbyServerName)
                                             .ifPresent(
@@ -411,5 +541,27 @@ public class WorldSwapCommands {
                         "§aVersus mode "
                                 + (plugin.versusMode ? "§2enabled" : "§7disabled")
                                 + "§a."));
+    }
+
+    void cmdState(CommandSource src) {
+        if (!isAdmin(src)) {
+            src.sendMessage(Component.text("§cNo permission!"));
+            return;
+        }
+        src.sendMessage(Component.text("§e=== MCSRSWAP State ==="));
+        src.sendMessage(Component.text("§7Game State: §f" + plugin.gameState));
+        src.sendMessage(Component.text("§7Docker Mode: §f" + plugin.dockerMode));
+        src.sendMessage(Component.text("§7Game Servers: §f" + plugin.gameServers));
+        src.sendMessage(Component.text("§7Players in game: §f" + plugin.playerServer.size()));
+        src.sendMessage(Component.text("§7Spectators: §f" + plugin.spectators.size()));
+        src.sendMessage(Component.text("§7Finished Servers: §f" + plugin.finishedServers));
+        src.sendMessage(Component.text("§7Current Time: §f" + plugin.currentTime + "s"));
+        src.sendMessage(Component.text("§7Rotation Time: §f" + plugin.rotationTime + "s"));
+        if (plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
+            src.sendMessage(
+                    Component.text(
+                            "§7Docker Containers: §f"
+                                    + plugin.dockerManager.getServerContainers().size()));
+        }
     }
 }

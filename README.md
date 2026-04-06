@@ -4,8 +4,22 @@ You can play as one team or one team versus another team. The project consists o
 
 | File | Where it goes |
 |---|---|
-| `mcsrswap-fabric-mod-1.0.0.jar` | `mods/` folder of every game server |
-| `mcsrswap-velocity-plugin-1.0.jar` | `plugins/` folder of the Velocity proxy |
+| `mcsrswap-fabric-mod-1.0.1.jar` | `mods/` folder of every game server |
+| `mcsrswap-velocity-plugin-1.0.1.jar` | `plugins/` folder of the Velocity proxy |
+
+---
+
+## 🚀 Quick Start Options
+
+### Option 1: Classic Setup (Manual Configuration)
+**Recommended for:** Full control, any platform (Windows/Linux/Mac)
+
+Follow the setup instructions below. You manually configure all game servers.
+
+### Option 2: Docker Dynamic Setup
+**Recommended for:** Easy deployment, automatic server management
+
+See **[README-DOCKER.md](README-DOCKER.md)** for a simplified Docker-based setup where game servers are spawned automatically on `/ms start`.
 
 ---
 
@@ -21,7 +35,7 @@ You can play as one team or one team versus another team. The project consists o
 
 ### Required mods on every game server
 
-These must be present in `mods/` alongside `mcsrswap-fabric-mod-1.0.0.jar`:
+These must be present in `mods/` alongside `mcsrswap-fabric-mod-1.0.1.jar`:
 
 - [`fabric-api-0.18.0+build.387-1.16.1.jar`](https://modrinth.com/mod/fabric-api/version/0.18.0+build.387-1.16.1)
 - FabricProxy 1.3.4 – enables Velocity modern forwarding for 1.16.1.  
@@ -52,7 +66,7 @@ Players **only ever connect to the Velocity port**. All game server ports must b
 
 ### 1.1 Install the plugin
 
-Copy `mcsrswap-velocity-plugin-1.0.jar` into `plugins/`.
+Copy `mcsrswap-velocity-plugin-1.0.1.jar` into `plugins/`.
 
 ### 1.2 Configure `velocity.toml`
 
@@ -69,12 +83,12 @@ lobby = "127.0.0.1:25570"
 game1 = "127.0.0.1:25571"
 game2 = "127.0.0.1:25572"
 # Add more game servers here – name them game3, game4, etc.
-# The prefix "game" and lobby name "lobby" can be changed in plugins/mcsrswap/config.yml.
+# The prefix "game" and lobby name "lobby" can be changed in plugins/mcsrswap/config.yml on your Velocity server.
 
 try = ["lobby"]
 ```
 
-> **Important:** Server names must match `gameServerPrefix` (default: `game`) and `lobbyServerName` (default: `lobby`) in `plugins/mcsrswap/config.yml`.
+> **Important:** Server names must match `gameServerPrefix` (default: `game`) and `lobbyServerName` (default: `lobby`) in the MCSR-Swap config.
 
 ### 1.3 Generate forwarding secret
 
@@ -146,7 +160,7 @@ Replace the secret with the value from Velocity's `forwarding.secret` file.
 Place the following in `mods/`:
 
 ```
-mcsrswap-fabric-mod-1.0.0.jar
+mcsrswap-fabric-mod-1.0.1.jar
 fabric-api-0.18.0+build.387-1.16.1.jar
 FabricProxy-1.3.4.jar
 ```

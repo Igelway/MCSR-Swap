@@ -1,0 +1,11 @@
+**/.git
+**/.github
+**/node_modules
+**/.gradle
+**/velocity-config
+**/server-data
+# Ignore build dirs except for the plugin JARs we need
+**/target/*
+!velocity-plugin/target/*.jar
+**/build/*
+!fabric-mod/build/libs/*.jar
