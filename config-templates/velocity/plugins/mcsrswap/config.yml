@@ -1,0 +1,23 @@
+rotationTime: 300
+requiredPercentage: 0.75
+versus: false
+language: en_US
+gameServerPrefix: game
+lobbyServerName: lobby
+
+spectateAfterWin: true
+spectateTarget: next
+spectateMinTime: 10
+
+saveHotbar: true
+eyeHoverTicks: 80
+
+# Docker mode (auto-enabled in Docker container via MCSRSWAP_DOCKER_MODE env var)
+docker:
+  enabled: false
+  network: mcsrswap-network
+
+# Admin users (UUID or username) - these users get swap.admin permission automatically
+# You can also use LuckPerms to manage permissions manually
+# admins:
+  # - "069a79f4-44e9-4726-a5be-fca90e38aaf9"
