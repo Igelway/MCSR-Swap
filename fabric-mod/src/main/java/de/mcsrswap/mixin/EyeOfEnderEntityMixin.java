@@ -7,9 +7,8 @@ import org.spongepowered.asm.mixin.injection.Constant;
 import org.spongepowered.asm.mixin.injection.ModifyConstant;
 
 /**
- * Extends the total lifetime of a thrown Eye of Ender.
- * Vanilla: 80 ticks total lifetime; hover phase is ~40 ticks (~2 s).
- * Configured via the Velocity config (eyeHoverTicks); falls back to
+ * Extends the total lifetime of a thrown Eye of Ender. Vanilla: 80 ticks total lifetime; hover
+ * phase is ~40 ticks (~2 s). Configured via the Velocity config (eyeHoverTicks); falls back to
  * config/worldswap/config.properties if no Velocity message has been received.
  */
 @Mixin(EyeOfEnderEntity.class)
