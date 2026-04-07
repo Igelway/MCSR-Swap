@@ -23,7 +23,7 @@ dependencies {
     minecraft 'com.mojang:minecraft:1.16.1'
     mappings  'net.fabricmc:yarn:1.16.1+build.21:v2'
 
-    modImplementation 'net.fabricmc:fabric-loader:0.14.25'
+    modImplementation 'net.fabricmc:fabric-loader:0.12.12'
 
     // Fabric-API: kompatibel mit dem Server (0.18.0 hat v0-Networking + lifecycle-events-v1)
     modImplementation "net.fabricmc.fabric-api:fabric-api:0.18.0+build.387-1.16.1"
