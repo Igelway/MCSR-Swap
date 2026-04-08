@@ -459,7 +459,8 @@ public class DockerServerManager {
 
         // Use named volume for gameserver data (Docker manages it automatically)
 
-        // Secret is at dataPath/velocity/forwarding.secret on host, but mounted to gameserver at /run/secrets/velocity_secret
+        // Secret is at dataPath/velocity/forwarding.secret on host, but mounted to gameserver at
+        // /run/secrets/velocity_secret
         String absSecretPath = dataPath + "/velocity/forwarding.secret";
 
         List<String> env =
