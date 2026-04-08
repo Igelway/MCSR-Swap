@@ -32,11 +32,13 @@ public final class PluginConfig {
         public final boolean enabled;
         public final String image;
         public final String network;
+        public final String host;
 
-        public Docker(boolean enabled, String image, String network) {
+        public Docker(boolean enabled, String image, String network, String host) {
             this.enabled = enabled;
             this.image = image;
             this.network = network;
+            this.host = host;
         }
 
         @Override
@@ -47,7 +49,9 @@ public final class PluginConfig {
                     + image
                     + "', network='"
                     + network
-                    + "}";
+                    + "', host='"
+                    + host
+                    + "'}";
         }
     }
 
@@ -118,12 +122,15 @@ public final class PluginConfig {
         else if (map.get("dockerConfig") instanceof Map)
             dockerMap = (Map<String, Object>) map.get("dockerConfig");
 
-        Docker docker = new Docker(false, "mcsrswap-gameserver:latest", "mcsrswap-network");
+        Docker docker = new Docker(false, "mcsrswap-gameserver:latest", "mcsrswap-network", null);
         if (dockerMap != null) {
             boolean enabled = toBoolean(dockerMap.getOrDefault("enabled", docker.enabled));
             String image = Objects.toString(dockerMap.getOrDefault("image", docker.image));
             String network = Objects.toString(dockerMap.getOrDefault("network", docker.network));
-            docker = new Docker(enabled, image, network);
+            String host = dockerMap.containsKey("host") 
+                ? Objects.toString(dockerMap.get("host")) 
+                : docker.host;
+            docker = new Docker(enabled, image, network, host);
         }
 
         // Environment overrides (useful when running in Docker compose)
@@ -133,12 +140,23 @@ public final class PluginConfig {
         }
         String envImage = System.getenv("MCSRSWAP_GAMESERVER_IMAGE");
         if (envImage != null && !envImage.isBlank()) {
-            docker = new Docker(docker.enabled, envImage, docker.network);
+            docker = new Docker(docker.enabled, envImage, docker.network, docker.host);
+        }
+        String envNetwork = System.getenv("MCSRSWAP_DOCKER_NETWORK");
+        if (envNetwork != null && !envNetwork.isBlank()) {
+            docker = new Docker(docker.enabled, docker.image, envNetwork, docker.host);
+        }
+        String envHost = System.getenv("MCSRSWAP_DOCKER_HOST");
+        if (envHost == null || envHost.isBlank()) {
+            envHost = System.getenv("DOCKER_HOST");
+        }
+        if (envHost != null && !envHost.isBlank()) {
+            docker = new Docker(docker.enabled, docker.image, docker.network, envHost);
         }
         String envDockerMode = System.getenv("MCSRSWAP_DOCKER_MODE");
         if (envDockerMode != null
                 && (envDockerMode.equalsIgnoreCase("true") || envDockerMode.equals("1"))) {
-            docker = new Docker(true, docker.image, docker.network);
+            docker = new Docker(true, docker.image, docker.network, docker.host);
         }
 
         return new PluginConfig(
