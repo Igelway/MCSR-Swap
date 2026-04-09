@@ -742,6 +742,11 @@ public class VelocitySwapPlugin {
         if (gameState == GameState.RUNNING && pendingReset.remove(player.getUniqueId())) {
             final boolean hotbar = saveHotbar;
             final int eyeTicks = eyeHoverTicks;
+            final String slotUuidStr =
+                    java.util.UUID.nameUUIDFromBytes(
+                                    ("mcsrswap-slot-" + serverName)
+                                            .getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                            .toString();
             sendToBackend(
                     player,
                     buildMessage(
@@ -755,6 +760,13 @@ public class VelocitySwapPlugin {
                             out -> {
                                 out.writeUTF("eyehoverticks");
                                 out.writeInt(eyeTicks);
+                            }));
+            sendToBackend(
+                    player,
+                    buildMessage(
+                            out -> {
+                                out.writeUTF("slot_uuid");
+                                out.writeUTF(slotUuidStr);
                             }));
             sendToBackend(player, buildMessage(out -> out.writeUTF("reset")));
         }
