@@ -74,8 +74,26 @@ public class DockerServerManager {
 
         // Initialize Docker client first so we can inspect containers if needed
         try {
-            DefaultDockerClientConfig config =
-                    DefaultDockerClientConfig.createDefaultConfigBuilder().build();
+            // Build Docker client config with optional host override
+            DefaultDockerClientConfig.Builder configBuilder =
+                    DefaultDockerClientConfig.createDefaultConfigBuilder();
+
+            // Check for MCSRSWAP_DOCKER_HOST or fall back to DOCKER_HOST
+            String dockerHost = System.getenv("MCSRSWAP_DOCKER_HOST");
+            if (dockerHost == null || dockerHost.isEmpty()) {
+                dockerHost = System.getenv("DOCKER_HOST");
+            }
+            if (dockerHost != null && !dockerHost.isEmpty()) {
+                configBuilder.withDockerHost(dockerHost);
+            }
+
+            // Check for MCSRSWAP_DOCKER_NETWORK
+            String dockerNetwork = System.getenv("MCSRSWAP_DOCKER_NETWORK");
+            if (dockerNetwork != null && !dockerNetwork.isEmpty()) {
+                networkName = dockerNetwork;
+            }
+
+            DefaultDockerClientConfig config = configBuilder.build();
             ApacheDockerHttpClient httpClient =
                     new ApacheDockerHttpClient.Builder()
                             .dockerHost(config.getDockerHost())
@@ -441,7 +459,8 @@ public class DockerServerManager {
 
         // Use named volume for gameserver data (Docker manages it automatically)
 
-        // Secret is at dataPath/velocity/forwarding.secret on host, but mounted to gameserver at /run/secrets/velocity_secret
+        // Secret is at dataPath/velocity/forwarding.secret on host, but mounted to gameserver at
+        // /run/secrets/velocity_secret
         String absSecretPath = dataPath + "/velocity/forwarding.secret";
 
         List<String> env =

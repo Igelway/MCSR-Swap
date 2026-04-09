@@ -11,6 +11,25 @@ import java.util.Objects;
  * a small set of environment variables to allow runtime overrides when running in Docker.
  */
 public final class PluginConfig {
+    // Default values
+    private static final int DEFAULT_ROTATION_TIME = 120;
+    private static final double DEFAULT_REQUIRED_PERCENTAGE = 1.0;
+    private static final boolean DEFAULT_VERSUS = false;
+    private static final String DEFAULT_LANGUAGE = "en_US";
+    private static final String DEFAULT_GAME_SERVER_PREFIX = "game";
+    private static final String DEFAULT_LOBBY_SERVER_NAME = "lobby";
+    private static final boolean DEFAULT_SPECTATE_AFTER_WIN = false;
+    private static final String DEFAULT_SPECTATE_TARGET = "next";
+    private static final int DEFAULT_SPECTATE_MIN_TIME = 15;
+    private static final boolean DEFAULT_SAVE_HOTBAR = true;
+    private static final int DEFAULT_EYE_HOVER_TICKS = 80;
+
+    // Docker defaults
+    private static final boolean DEFAULT_DOCKER_ENABLED = false;
+    private static final String DEFAULT_DOCKER_IMAGE = "mcsrswap-gameserver:latest";
+    private static final String DEFAULT_DOCKER_NETWORK = "mcsrswap-network";
+    private static final String DEFAULT_DOCKER_HOST = null;
+
     public final int rotationTime;
     public final double requiredPercentage;
     public final boolean versus;
@@ -32,11 +51,13 @@ public final class PluginConfig {
         public final boolean enabled;
         public final String image;
         public final String network;
+        public final String host;
 
-        public Docker(boolean enabled, String image, String network) {
+        public Docker(boolean enabled, String image, String network, String host) {
             this.enabled = enabled;
             this.image = image;
             this.network = network;
+            this.host = host;
         }
 
         @Override
@@ -47,7 +68,9 @@ public final class PluginConfig {
                     + image
                     + "', network='"
                     + network
-                    + "}";
+                    + "', host='"
+                    + host
+                    + "'}";
         }
     }
 
@@ -84,24 +107,35 @@ public final class PluginConfig {
     public static PluginConfig fromMap(Map<String, Object> map) {
         if (map == null) map = Map.of();
 
-        int rotation = toInt(map.getOrDefault("rotationTime", map.getOrDefault("rotation", 120)));
+        int rotation =
+                toInt(
+                        map.getOrDefault(
+                                "rotationTime",
+                                map.getOrDefault("rotation", DEFAULT_ROTATION_TIME)));
         Object req =
                 map.getOrDefault(
                         "requiredPercentage",
-                        map.getOrDefault("required", map.getOrDefault("requiredPercentage", 1.0)));
-        double requiredPercentage = toDouble(req, 1.0);
-        boolean versus = toBoolean(map.getOrDefault("versus", false));
+                        map.getOrDefault(
+                                "required",
+                                map.getOrDefault(
+                                        "requiredPercentage", DEFAULT_REQUIRED_PERCENTAGE)));
+        double requiredPercentage = toDouble(req, DEFAULT_REQUIRED_PERCENTAGE);
+        boolean versus = toBoolean(map.getOrDefault("versus", DEFAULT_VERSUS));
 
-        Object langObj = map.getOrDefault("language", "en_US");
-        String language = normalizeLanguage(Objects.toString(langObj, "en_US"));
+        Object langObj = map.getOrDefault("language", DEFAULT_LANGUAGE);
+        String language = normalizeLanguage(Objects.toString(langObj, DEFAULT_LANGUAGE));
 
-        String gameServerPrefix = Objects.toString(map.getOrDefault("gameServerPrefix", "game"));
-        String lobbyServerName = Objects.toString(map.getOrDefault("lobbyServerName", "lobby"));
-        boolean spectateAfterWin = toBoolean(map.getOrDefault("spectateAfterWin", false));
-        String spectateTarget = Objects.toString(map.getOrDefault("spectateTarget", "next"));
-        int spectateMinTime = toInt(map.getOrDefault("spectateMinTime", 15));
-        boolean saveHotbar = toBoolean(map.getOrDefault("saveHotbar", true));
-        int eyeHoverTicks = toInt(map.getOrDefault("eyeHoverTicks", 80));
+        String gameServerPrefix =
+                Objects.toString(map.getOrDefault("gameServerPrefix", DEFAULT_GAME_SERVER_PREFIX));
+        String lobbyServerName =
+                Objects.toString(map.getOrDefault("lobbyServerName", DEFAULT_LOBBY_SERVER_NAME));
+        boolean spectateAfterWin =
+                toBoolean(map.getOrDefault("spectateAfterWin", DEFAULT_SPECTATE_AFTER_WIN));
+        String spectateTarget =
+                Objects.toString(map.getOrDefault("spectateTarget", DEFAULT_SPECTATE_TARGET));
+        int spectateMinTime = toInt(map.getOrDefault("spectateMinTime", DEFAULT_SPECTATE_MIN_TIME));
+        boolean saveHotbar = toBoolean(map.getOrDefault("saveHotbar", DEFAULT_SAVE_HOTBAR));
+        int eyeHoverTicks = toInt(map.getOrDefault("eyeHoverTicks", DEFAULT_EYE_HOVER_TICKS));
 
         List<String> admins = new ArrayList<>();
         Object adminsObj = map.get("admins");
@@ -118,12 +152,22 @@ public final class PluginConfig {
         else if (map.get("dockerConfig") instanceof Map)
             dockerMap = (Map<String, Object>) map.get("dockerConfig");
 
-        Docker docker = new Docker(false, "mcsrswap-gameserver:latest", "mcsrswap-network");
+        Docker docker =
+                new Docker(
+                        DEFAULT_DOCKER_ENABLED,
+                        DEFAULT_DOCKER_IMAGE,
+                        DEFAULT_DOCKER_NETWORK,
+                        DEFAULT_DOCKER_HOST);
         if (dockerMap != null) {
-            boolean enabled = toBoolean(dockerMap.getOrDefault("enabled", docker.enabled));
-            String image = Objects.toString(dockerMap.getOrDefault("image", docker.image));
-            String network = Objects.toString(dockerMap.getOrDefault("network", docker.network));
-            docker = new Docker(enabled, image, network);
+            boolean enabled = toBoolean(dockerMap.getOrDefault("enabled", DEFAULT_DOCKER_ENABLED));
+            String image = Objects.toString(dockerMap.getOrDefault("image", DEFAULT_DOCKER_IMAGE));
+            String network =
+                    Objects.toString(dockerMap.getOrDefault("network", DEFAULT_DOCKER_NETWORK));
+            String host =
+                    dockerMap.containsKey("host")
+                            ? Objects.toString(dockerMap.get("host"))
+                            : DEFAULT_DOCKER_HOST;
+            docker = new Docker(enabled, image, network, host);
         }
 
         // Environment overrides (useful when running in Docker compose)
@@ -133,12 +177,23 @@ public final class PluginConfig {
         }
         String envImage = System.getenv("MCSRSWAP_GAMESERVER_IMAGE");
         if (envImage != null && !envImage.isBlank()) {
-            docker = new Docker(docker.enabled, envImage, docker.network);
+            docker = new Docker(docker.enabled, envImage, docker.network, docker.host);
+        }
+        String envNetwork = System.getenv("MCSRSWAP_DOCKER_NETWORK");
+        if (envNetwork != null && !envNetwork.isBlank()) {
+            docker = new Docker(docker.enabled, docker.image, envNetwork, docker.host);
+        }
+        String envHost = System.getenv("MCSRSWAP_DOCKER_HOST");
+        if (envHost == null || envHost.isBlank()) {
+            envHost = System.getenv("DOCKER_HOST");
+        }
+        if (envHost != null && !envHost.isBlank()) {
+            docker = new Docker(docker.enabled, docker.image, docker.network, envHost);
         }
         String envDockerMode = System.getenv("MCSRSWAP_DOCKER_MODE");
         if (envDockerMode != null
                 && (envDockerMode.equalsIgnoreCase("true") || envDockerMode.equals("1"))) {
-            docker = new Docker(true, docker.image, docker.network);
+            docker = new Docker(true, docker.image, docker.network, docker.host);
         }
 
         return new PluginConfig(
