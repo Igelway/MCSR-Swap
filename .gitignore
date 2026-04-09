@@ -12,6 +12,15 @@ target/
 .idea/
 *.iml
 .vscode/
+.classpath
+.project
+.settings/
+
+# Eclipse
+.classpath
+.factorypath
+.project
+.settings/
 
 # OS
 .DS_Store
@@ -38,3 +47,10 @@ Thumbs.db
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+
+# Docker volumes and server data
+data/
+.env
+.factorypath
+
+!**/gradle/wrapper/gradle-wrapper.jar

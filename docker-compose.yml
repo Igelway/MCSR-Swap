@@ -1,0 +1,82 @@
+services:
+  velocity:
+    image: ${MCSRSWAP_VELOCITY_IMAGE:-ghcr.io/igelway/mcsr-swap-velocity:latest}
+    container_name: mcsrswap-velocity
+    ports:
+      - "25565:25577"
+    user: "minecraft:minecraft"
+    depends_on:
+      - docker-proxy
+      - lobby
+    volumes:
+      - ./data/velocity:/data
+    environment:
+      MCSRSWAP_DOCKER_MODE: "true"
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      MCSRSWAP_GAMESERVER_IMAGE: ${MCSRSWAP_GAMESERVER_IMAGE:-ghcr.io/igelway/mcsr-swap-gameserver:latest}
+      MCSRSWAP_LOBBY_ADDRESS: ${MCSRSWAP_LOBBY_ADDRESS:-lobby}
+      # Docker network name for spawned game servers
+      MCSRSWAP_DOCKER_NETWORK: ${MCSRSWAP_DOCKER_NETWORK:-mcsrswap-network}
+      # Docker host URL (uses socket proxy instead of mounting /var/run/docker.sock directly)
+      MCSRSWAP_DOCKER_HOST: ${MCSRSWAP_DOCKER_HOST:-tcp://docker-proxy:2375}
+    networks:
+      - mcsrswap-network
+    restart: unless-stopped
+    labels:
+      - "mcsrswap.role=proxy"
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+
+  # Lightweight Docker socket proxy to avoid binding /var/run/docker.sock into the Velocity container.
+  # This still requires the proxy container to mount the host socket and is therefore only safe in
+  # trusted environments. It exposes a TCP API on port 2375 reachable on the compose network.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: docker-proxy
+    restart: unless-stopped
+    environment:
+       - CONTAINERS=1
+       - IMAGES=1
+       - NETWORKS=1
+       - VOLUMES=1
+       - INFO=1
+       - VERSION=1
+       - PING=1
+       - EVENTS=1
+       - POST=1
+       - ALLOW_START=1
+       - ALLOW_STOP=1
+       - ALLOW_RESTARTS=1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - mcsrswap-network
+
+  lobby:
+    image: itzg/minecraft-server:java21
+    container_name: mcsrswap-lobby
+    expose:
+      - "25565"
+    environment:
+      EULA: "TRUE"
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TYPE: FABRIC
+      VERSION: "1.16.1"
+      ONLINE_MODE: "FALSE"
+      DIFFICULTY: peaceful
+      SPAWN_PROTECTION: 0
+      MOTD: "MCSR-Swap Lobby"
+      MEMORY: 2G
+    volumes:
+      - ./data/lobby:/data
+    networks:
+      - mcsrswap-network
+    restart: unless-stopped
+    user: "minecraft:minecraft"
+
+networks:
+  mcsrswap-network:
+    name: mcsrswap-network
+    driver: bridge

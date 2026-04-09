@@ -1,10 +1,18 @@
 plugins {
     id 'fabric-loom' version '0.10-SNAPSHOT'
+    id 'com.diffplug.spotless' version '6.25.0'
 }
 
-version = '1.0.0'
+version = '1.0.2'
 group   = 'de.mcsrswap'
 base.archivesName = 'mcsrswap-fabric-mod'
+
+// Java toolchain for compatibility
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
 
 repositories {
     maven { url 'https://maven.fabricmc.net/' }
@@ -22,5 +30,19 @@ dependencies {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 11
+    it.options.release = 17
+}
+
+spotless {
+    java {
+        googleJavaFormat().aosp() // 4-space indentation
+        importOrder()
+        removeUnusedImports()
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
 }

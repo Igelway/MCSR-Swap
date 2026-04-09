@@ -14,8 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ServerPlayNetworkHandler.class)
 public class LocaleCaptureMixin {
 
-    @Shadow
-    public ServerPlayerEntity player;
+    @Shadow public ServerPlayerEntity player;
 
     @Inject(method = "onClientSettings", at = @At("HEAD"))
     private void captureLocale(ClientSettingsC2SPacket packet, CallbackInfo ci) {
