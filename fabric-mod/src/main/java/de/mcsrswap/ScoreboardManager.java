@@ -80,10 +80,10 @@ public class ScoreboardManager {
                     new TitleS2CPacket(TitleS2CPacket.Action.ACTIONBAR, new LiteralText(colored)));
             if (urgent) {
                 // Pitch rises from ~0.9 (5 s) to ~1.3 (1 s) for a satisfying countdown feel
-                float pitch = 0.9f + (5 - currentTime) * 0.1f;
+                float pitch = 1.0f;
                 p.networkHandler.sendPacket(
                         new PlaySoundS2CPacket(
-                                SoundEvents.BLOCK_NOTE_BLOCK_PLING,
+                                SoundEvents.BLOCK_NOTE_BLOCK_HAT,
                                 SoundCategory.PLAYERS,
                                 p.getX(),
                                 p.getY(),
