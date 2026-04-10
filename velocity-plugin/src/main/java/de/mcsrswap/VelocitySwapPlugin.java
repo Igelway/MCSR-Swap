@@ -186,9 +186,18 @@ public class VelocitySwapPlugin {
             }
 
             Yaml yaml = new Yaml();
-            @SuppressWarnings("unchecked")
-            Map<String, Object> rawConfig = yaml.load(Files.newInputStream(configFile));
-            if (rawConfig == null) rawConfig = Map.of();
+            Map<String, Object> rawConfig;
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> loaded = yaml.load(Files.newInputStream(configFile));
+                rawConfig = loaded != null ? loaded : new java.util.HashMap<>();
+            } catch (Exception e) {
+                logger.error(
+                        "Failed to parse config.yml – using defaults. Fix the file and reload."
+                                + " Error: {}",
+                        e.getMessage());
+                rawConfig = new java.util.HashMap<>();
+            }
 
             // Build typed config and use it as primary source for all known fields
             PluginConfig cfg = PluginConfig.fromMap(rawConfig);
@@ -206,6 +215,15 @@ public class VelocitySwapPlugin {
             spectateMinTime = cfg.spectateMinTime;
             saveHotbar = cfg.saveHotbar;
             eyeHoverTicks = cfg.eyeHoverTicks;
+
+            logger.info(
+                    "Config loaded: rotationTime={}, eyeHoverTicks={}, saveHotbar={},"
+                            + " spectateAfterWin={}, language={}",
+                    rotationTime,
+                    eyeHoverTicks,
+                    saveHotbar,
+                    spectateAfterWin,
+                    cfg.language);
 
             // language from typed config (normalize to filename)
             String languageFile =
@@ -603,7 +621,8 @@ public class VelocitySwapPlugin {
     }
 
     private void sendToBackend(Player player, byte[] data) {
-        player.getCurrentServer().ifPresent(conn -> conn.sendPluginMessage(CHANNEL, data));
+        player.getCurrentServer()
+                .ifPresent(conn -> conn.sendPluginMessage(CHANNEL, data));
     }
 
     private byte[] buildMessage(java.util.function.Consumer<ByteArrayDataOutput> writer) {
@@ -728,36 +747,67 @@ public class VelocitySwapPlugin {
         // Fabric ENTITY_LOAD handler can act immediately. This message is the fallback.
         if (watchingPlayers.containsKey(player.getUniqueId())) {
             final UUID uuid = player.getUniqueId();
-            sendToBackend(
-                    player,
-                    buildMessage(
-                            out -> {
-                                out.writeUTF("become_spectator");
-                                out.writeUTF(uuid.toString());
-                            }));
+            server.getScheduler()
+                    .buildTask(
+                            this,
+                            () ->
+                                    sendToBackend(
+                                            player,
+                                            buildMessage(
+                                                    out -> {
+                                                        out.writeUTF("become_spectator");
+                                                        out.writeUTF(uuid.toString());
+                                                    })))
+                    .delay(50, TimeUnit.MILLISECONDS)
+                    .schedule();
             return; // no state sync for watchers
         }
 
-        // On game start: send config + reset to initialise the game server state.
-        if (gameState == GameState.RUNNING && pendingReset.remove(player.getUniqueId())) {
-            final boolean hotbar = saveHotbar;
-            final int eyeTicks = eyeHoverTicks;
-            sendToBackend(
-                    player,
-                    buildMessage(
-                            out -> {
-                                out.writeUTF("savehotbar");
-                                out.writeBoolean(hotbar);
-                            }));
-            sendToBackend(
-                    player,
-                    buildMessage(
-                            out -> {
-                                out.writeUTF("eyehoverticks");
-                                out.writeInt(eyeTicks);
-                            }));
-            sendToBackend(player, buildMessage(out -> out.writeUTF("reset")));
-        }
+        // Always send server-specific config when connecting to any game server.
+        // Schedule with a short delay: ServerConnectedEvent fires before
+        // player.getCurrentServer() is populated, so a direct send would fail.
+        final int eyeTicks = eyeHoverTicks;
+        final String slotUuidStr =
+                java.util.UUID.nameUUIDFromBytes(
+                                ("mcsrswap-slot-" + serverName)
+                                        .getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                        .toString();
+        // On game start only: savehotbar + reset
+        final boolean doReset =
+                gameState == GameState.RUNNING && pendingReset.remove(player.getUniqueId());
+        final boolean hotbar = saveHotbar;
+        server.getScheduler()
+                .buildTask(
+                        this,
+                        () -> {
+                            sendToBackend(
+                                    player,
+                                    buildMessage(
+                                            out -> {
+                                                out.writeUTF("eyehoverticks");
+                                                out.writeInt(eyeTicks);
+                                            }));
+                            sendToBackend(
+                                    player,
+                                    buildMessage(
+                                            out -> {
+                                                out.writeUTF("slot_uuid");
+                                                out.writeUTF(slotUuidStr);
+                                            }));
+                            if (doReset) {
+                                sendToBackend(
+                                        player,
+                                        buildMessage(
+                                                out -> {
+                                                    out.writeUTF("savehotbar");
+                                                    out.writeBoolean(hotbar);
+                                                }));
+                                sendToBackend(
+                                        player, buildMessage(out -> out.writeUTF("reset")));
+                            }
+                        })
+                .delay(50, TimeUnit.MILLISECONDS)
+                .schedule();
 
         // Always send the current state – with a short delay so the backend connection
         // is stable and ENTITY_LOAD on the Fabric server has already fired.
