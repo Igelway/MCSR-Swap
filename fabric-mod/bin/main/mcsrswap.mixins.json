@@ -13,6 +13,8 @@
     "JoinQuitMessageMixin",
     "LocaleCaptureMixin",
     "MemoryExpiryAccessor",
+    "PlayerDataMixin",
+    "PlayerManagerInvoker",
     "SpectatorLockMixin"
   ],
   "client": [],
