@@ -1,5 +1,7 @@
 package de.mcsrswap;
 
+import java.util.UUID;
+
 /**
  * Holds runtime configuration values pushed from the Velocity proxy at game start. Defaults apply
  * until the first game is started.
@@ -12,4 +14,13 @@ public class ModConfig {
      * plugin message on each game start.
      */
     public static int eyeHoverTicks = 80;
+
+    /**
+     * Fixed UUID used as the filename for this server's player-data slot. All players who play on
+     * this server share one {@code <slotUuid>.dat} file, so each incoming player automatically
+     * inherits the full state (inventory, XP, position, effects, …) of their predecessor. Set via
+     * the {@code slot_uuid} plugin message at game start; {@code null} means no redirect (vanilla
+     * per-player files).
+     */
+    public static UUID slotUuid = null;
 }

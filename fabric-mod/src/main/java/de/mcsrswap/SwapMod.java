@@ -3,9 +3,9 @@ package de.mcsrswap;
 import com.google.common.io.ByteArrayDataInput;
 import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
+import de.mcsrswap.mixin.PlayerManagerInvoker;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -35,7 +35,6 @@ public class SwapMod implements ModInitializer {
 
     private MinecraftServer server;
 
-    // Game state (identical to the Paper plugin)
     private int currentTime = 0;
     private int completedWorlds = 0;
     private int requiredWorlds = 0;
@@ -46,13 +45,7 @@ public class SwapMod implements ModInitializer {
      */
     private boolean daylightCycleFrozen = false;
 
-    /** true when server is fully started and ready for players. */
-    private boolean serverReady = false;
-
-    /**
-     * true when game is frozen (no ticks processed) – set by reset, cleared by first player join or
-     * start.
-     */
+    /** true when game ticks are frozen – set by reset, cleared by first survival player join. */
     private boolean frozen = true;
 
     /**
@@ -62,48 +55,39 @@ public class SwapMod implements ModInitializer {
      */
     private final Map<UUID, UUID> spectatorCameras = new HashMap<>();
 
-    /**
-     * Players currently in a dead state (health ≤ 0). Used to detect the exact tick of death so we
-     * can clear the saved inventory and prevent item duplication on swap (items remain on the floor
-     * in the world; the next player starts with an empty inventory and can pick them up).
-     */
-    private final Set<UUID> currentlyDead = new HashSet<>();
-
     private final ScoreboardManager scoreboardManager = new ScoreboardManager();
-    private final StateManager stateManager = new StateManager();
+    final StateManager stateManager = new StateManager();
 
     /** Last known game mode – used to detect Spectator transitions. */
     private final Map<UUID, GameMode> lastKnownGameMode = new HashMap<>();
 
     /**
      * Players who are about to join as locked spectators (watchers). Velocity sends
-     * "incoming_spectator" before the watcher connects, so ENTITY_LOAD can immediately skip the
-     * normal state restore and put them in spectator mode.
+     * "incoming_spectator" before the watcher connects, so ENTITY_LOAD can immediately put them in
+     * spectator mode and skip state processing.
      */
     private final Set<UUID> pendingSpectators = new HashSet<>();
 
     /**
      * Players currently connected to this server. ENTITY_LOAD also fires on dimension changes and
-     * respawns – restoreState should only be called on the actual first join.
+     * respawns – we only act on the actual first join.
      */
     private final Set<UUID> connectedPlayers = new HashSet<>();
 
     /**
-     * Deferred state restore: ENTITY_LOAD schedules the restore for X ticks later. This gives the
-     * client connection time to stabilise and prevents an interaction freeze.
+     * Players for whom the slot .dat has already been explicitly written by the {@code save}
+     * handler. Their subsequent disconnect save is redirected to their real UUID file instead of
+     * the slot file, so the slot .dat is never overwritten with post-ejection state (which would
+     * lack the {@code RootVehicle} tag and have stale position data).
      */
-    private final Map<UUID, Integer> restoreCountdown = new HashMap<>();
+    public static final Set<UUID> bypassSlotRedirect = new HashSet<>();
 
-    private final Map<UUID, PlayerState> pendingRestore = new HashMap<>();
-
-    private static final int RESTORE_DELAY_TICKS = 2;
+    /** Counter for the 20-tick periodic save cycle. */
+    private int stateSaveTick = 0;
 
     // =========================
     // INIT
     // =========================
-
-    /** State saving: saved every 20 ticks (1 s) so the disconnect state is always up to date. */
-    private int stateSaveTick = 0;
 
     @Override
     public void onInitialize() {
@@ -114,11 +98,7 @@ public class SwapMod implements ModInitializer {
                     INSTANCE = this;
                     server = srv;
                     scoreboardManager.setupScoreboard(srv);
-                    stateManager.setServer(srv);
                     freezeWorldTime();
-
-                    // Server is now ready - Velocity will detect this via ping
-                    serverReady = true;
                 });
 
         // Incoming plugin messages from Velocity via the v0 networking API
@@ -131,144 +111,111 @@ public class SwapMod implements ModInitializer {
                 });
 
         // ENTITY_LOAD fires on: first join, dimension changes, and respawns.
-        // Do NOT set lastKnownWorld here (would break End-portal detection)!
-        // Only call restoreState on the actual first join; Spectator players are skipped.
+        // We only act on the actual first join (tracked via connectedPlayers).
         ServerEntityEvents.ENTITY_LOAD.register(
                 (entity, world) -> {
                     if (!(entity instanceof ServerPlayerEntity)) return;
                     ServerPlayerEntity player = (ServerPlayerEntity) entity;
 
-                    if (!connectedPlayers.contains(player.getUuid())) {
-                        connectedPlayers.add(player.getUuid());
+                    if (connectedPlayers.contains(player.getUuid())) return;
+                    connectedPlayers.add(player.getUuid());
 
-                        // Incoming watcher: skip state restore entirely, put in spectator
-                        // immediately.
-                        // This is triggered by a "incoming_spectator" pre-notification from
-                        // Velocity,
-                        // sent before the player's connection request fires.
-                        if (pendingSpectators.remove(player.getUuid())) {
-                            player.interactionManager.setGameMode(
-                                    GameMode.SPECTATOR, player.interactionManager.getGameMode());
-                            sendModeToVelocity(player, true);
-                            ServerPlayerEntity toWatch =
-                                    findActiveSurvivalPlayer(server, player.getUuid());
-                            if (toWatch != null) {
-                                player.networkHandler.sendPacket(
-                                        new SetCameraEntityS2CPacket(toWatch));
-                                spectatorCameras.put(player.getUuid(), toWatch.getUuid());
-                            }
-                            return;
+                    // Incoming watcher: put in spectator immediately, skip everything else.
+                    // The "incoming_spectator" pre-notification from Velocity already marked them.
+                    if (pendingSpectators.remove(player.getUuid())) {
+                        player.interactionManager.setGameMode(
+                                GameMode.SPECTATOR, player.interactionManager.getGameMode());
+                        sendModeToVelocity(player, true);
+                        ServerPlayerEntity toWatch =
+                                findActiveSurvivalPlayer(server, player.getUuid());
+                        if (toWatch != null) {
+                            player.networkHandler.sendPacket(new SetCameraEntityS2CPacket(toWatch));
+                            spectatorCameras.put(player.getUuid(), toWatch.getUuid());
                         }
-
-                        boolean spectator =
-                                player.interactionManager.getGameMode() == GameMode.SPECTATOR;
-                        if (spectator) {
-                            sendModeToVelocity(player, true);
-                            return; // Spectator: no state restore, no scoreboard update
-                        }
-                        // Unfreeze day/night cycle and game when first survival player joins after
-                        // a reset
-                        if (daylightCycleFrozen) {
-                            daylightCycleFrozen = false;
-                            server.getWorlds()
-                                    .forEach(
-                                            w ->
-                                                    w.getGameRules()
-                                                            .get(GameRules.DO_DAYLIGHT_CYCLE)
-                                                            .set(true, server));
-                        }
-                        if (frozen) {
-                            frozen = false;
-                        }
-                        scoreboardManager.update(
-                                finished, completedWorlds, requiredWorlds, currentTime, player);
-                        PlayerState cs = stateManager.getCurrentState();
-                        if (cs != null) {
-                            // Capture joining player's own hotbar preference NOW (their own server
-                            // NBT)
-                            // before restoreState overwrites the inventory with the predecessor's
-                            // items.
-                            if (stateManager.saveHotbar) {
-                                net.minecraft.item.Item[] pref = new net.minecraft.item.Item[9];
-                                for (int i = 0; i < 9; i++)
-                                    pref[i] = player.inventory.getStack(i).getItem();
-                                stateManager.hotbarPreferences.put(player.getUuid(), pref);
-                            }
-                            // Pre-set position immediately so the client never renders the old
-                            // spawn
-                            // location. Only applicable when staying in the same dimension; cross-
-                            // dimension joins go through a loading screen so there's no visible
-                            // flash.
-                            if (server.getWorld(cs.worldKey) == player.getServerWorld()) {
-                                player.refreshPositionAndAngles(cs.x, cs.y, cs.z, cs.yaw, cs.pitch);
-                            }
-                            pendingRestore.put(player.getUuid(), cs);
-                            restoreCountdown.put(player.getUuid(), RESTORE_DELAY_TICKS);
-                        }
-                    }
-                });
-
-        // Tick-Handler: Restore-Delay, End-Portal-Erkennung, State-Save, Disconnect-Tracking
-        ServerTickEvents.END_SERVER_TICK.register(
-                srv -> {
-                    // Skip all tick processing if frozen
-                    if (frozen) {
                         return;
                     }
 
-                    // ── Deferred state restore ─────────────────────────────────────
-                    for (Iterator<Map.Entry<UUID, Integer>> it =
-                                    restoreCountdown.entrySet().iterator();
-                            it.hasNext(); ) {
-                        Map.Entry<UUID, Integer> entry = it.next();
-                        int remaining = entry.getValue() - 1;
-                        if (remaining <= 0) {
-                            it.remove();
-                            UUID uuid = entry.getKey();
-                            PlayerState s = pendingRestore.remove(uuid);
-                            ServerPlayerEntity p = srv.getPlayerManager().getPlayer(uuid);
-                            if (p != null && s != null) stateManager.restoreState(p, s);
-                        } else {
-                            entry.setValue(remaining);
-                        }
+                    // Player loaded their data from the slot UUID .dat automatically.
+                    // If they were somehow in spectator (e.g. first join before game start), notify
+                    // Velocity and skip further processing.
+                    if (player.interactionManager.getGameMode() == GameMode.SPECTATOR) {
+                        sendModeToVelocity(player, true);
+                        return;
                     }
 
-                    // ── Remove join invincibility (for N ticks after restoreState) ──────────────
+                    // Unfreeze day/night cycle and game ticks on first survival join after reset.
+                    if (daylightCycleFrozen) {
+                        daylightCycleFrozen = false;
+                        server.getWorlds()
+                                .forEach(
+                                        w ->
+                                                w.getGameRules()
+                                                        .get(GameRules.DO_DAYLIGHT_CYCLE)
+                                                        .set(true, server));
+                    }
+                    frozen = false;
+
+                    // Always force survival – the slot .dat may contain a different game mode.
+                    player.interactionManager.setGameMode(
+                            GameMode.SURVIVAL, player.interactionManager.getGameMode());
+
+                    scoreboardManager.update(
+                            finished, completedWorlds, requiredWorlds, currentTime, player);
+
+                    // Transfer mob anger from the previous player to the incoming player.
+                    UUID prevUuid = stateManager.lastPlayerUuid;
+                    if (prevUuid != null && !prevUuid.equals(player.getUuid())) {
+                        stateManager.transferMobAnger(
+                                player.getServerWorld(),
+                                prevUuid,
+                                player.getUuid(),
+                                player.getX(),
+                                player.getY(),
+                                player.getZ());
+                    }
+
+                    // Apply the joining player's own hotbar preference to the slot inventory.
+                    if (stateManager.saveHotbar) stateManager.applyHotbarPreference(player);
+
+                    // Disable join invincibility.
+                    player.timeUntilRegen = 0;
+                    stateManager.clearRegenAfter.put(player.getUuid(), 20);
+                });
+
+        // Tick handler: clearRegen, mode detection, periodic save, disconnect cleanup, camera locks
+        ServerTickEvents.END_SERVER_TICK.register(
+                srv -> {
+                    if (frozen) return;
+
                     stateManager.tickClearRegen(srv);
 
-                    // ── Periodic state save (1 s) + Spectator detection + disconnect tracking
-                    // ─────
                     stateSaveTick++;
                     if (stateSaveTick >= 20) {
                         stateSaveTick = 0;
                         Set<UUID> online = new HashSet<>();
+                        PlayerManagerInvoker pmInvoker =
+                                (PlayerManagerInvoker) srv.getPlayerManager();
                         for (ServerPlayerEntity p : srv.getPlayerManager().getPlayerList()) {
                             online.add(p.getUuid());
                             GameMode mode = p.interactionManager.getGameMode();
                             GameMode prev = lastKnownGameMode.put(p.getUuid(), mode);
-                            // Detect game-mode changes and notify Velocity
                             if (prev != null && prev != mode) {
-                                boolean nowSpectator = mode == GameMode.SPECTATOR;
-                                sendModeToVelocity(p, nowSpectator);
+                                sendModeToVelocity(p, mode == GameMode.SPECTATOR);
                             }
-                            // Only save living survival players (dead players keep the last living
-                            // save).
+                            // Periodically persist the slot state for living survival players.
                             if (mode != GameMode.SPECTATOR && p.getHealth() > 0.0f) {
-                                stateManager.saveState(p);
+                                pmInvoker.invokeSavePlayerData(p);
                             }
                         }
-                        // Clean up disconnected players
-                        // Cleanup locale for disconnected players before retainAll
+                        // Cleanup disconnected players
                         connectedPlayers.stream()
                                 .filter(u -> !online.contains(u))
                                 .forEach(Lang::removeLocale);
                         connectedPlayers.retainAll(online);
                         lastKnownGameMode.keySet().retainAll(online);
-                        restoreCountdown.keySet().retainAll(online);
-                        pendingRestore.keySet().retainAll(online);
                         pendingSpectators.retainAll(online);
+                        bypassSlotRedirect.retainAll(online);
                         stateManager.cleanupDisconnected(online);
-                        currentlyDead.retainAll(online);
                         spectatorCameras.keySet().retainAll(online);
 
                         // Re-lock spectator cameras every second so the watcher cannot escape POV
@@ -279,26 +226,11 @@ public class SwapMod implements ModInitializer {
                                     srv.getPlayerManager().getPlayer(cam.getValue());
                             if (watcher == null) continue;
                             if (target == null) {
-                                // Target left – try to find any active survival player
                                 target = findActiveSurvivalPlayer(srv, cam.getKey());
                                 if (target == null) continue;
                                 cam.setValue(target.getUuid());
                             }
                             watcher.networkHandler.sendPacket(new SetCameraEntityS2CPacket(target));
-                        }
-                    }
-
-                    // ── Death detection: clear saved inventory on first tick of death ──────────
-                    for (ServerPlayerEntity player : srv.getPlayerManager().getPlayerList()) {
-                        if (player.interactionManager.getGameMode() == GameMode.SPECTATOR) continue;
-                        UUID uuid = player.getUuid();
-                        if (player.getHealth() <= 0.0f) {
-                            if (!currentlyDead.contains(uuid)) {
-                                currentlyDead.add(uuid);
-                                stateManager.clearInventory();
-                            }
-                        } else {
-                            currentlyDead.remove(uuid);
                         }
                     }
                 });
@@ -310,20 +242,16 @@ public class SwapMod implements ModInitializer {
 
     /** Called by EndPortalMixin when a living survival player steps into the End exit portal. */
     public static void onEndPortalEntered(ServerPlayerEntity player) {
-        if (INSTANCE != null) {
-            INSTANCE.onPlayerExitEnd(player);
-        }
+        if (INSTANCE != null) INSTANCE.onPlayerExitEnd(player);
     }
 
     private void onPlayerExitEnd(ServerPlayerEntity player) {
         if (finished) return;
         finished = true;
-
         server.getPlayerManager()
                 .getPlayerList()
                 .forEach(
                         p -> p.sendMessage(new LiteralText(Lang.gameFinished(p.getUuid())), false));
-
         scoreboardManager.update(finished, completedWorlds, requiredWorlds, currentTime);
         sendFinish(player);
     }
@@ -350,21 +278,6 @@ public class SwapMod implements ModInitializer {
         buf.writeBytes(out.toByteArray());
         Packet<?> packet = ServerSidePacketRegistry.INSTANCE.toPacket(CHANNEL, buf);
         ServerSidePacketRegistry.INSTANCE.sendToPlayer(player, packet);
-    }
-
-    /**
-     * Send a global message to Velocity (not tied to a specific player). Uses the first available
-     * player as transport, or logs a warning if no players are online.
-     */
-    private void sendGlobalMessageToVelocity(String type, Consumer<ByteArrayDataOutput> writer) {
-        if (server == null || server.getPlayerManager().getPlayerList().isEmpty()) {
-            System.out.println(
-                    "[MCSRSWAP] Cannot send '" + type + "' to Velocity: no players online");
-            return;
-        }
-        // Use first available player as message transport
-        ServerPlayerEntity anyPlayer = server.getPlayerManager().getPlayerList().get(0);
-        sendToVelocity(anyPlayer, writer);
     }
 
     // =========================
@@ -403,17 +316,24 @@ public class SwapMod implements ModInitializer {
 
             case "reset":
                 resetWorldState();
-                frozen = true; // Re-freeze after reset
-                return; // resetWorldState already calls updateScoreboard()
+                frozen = true;
+                return;
 
             case "save":
-                // Triggered by Velocity 50 ms before rotation – immediate state save
-                // so the state is as up to date as possible for the next player.
+                // Triggered by Velocity 50 ms before rotation. Force-write the slot .dat so the
+                // next player gets the freshest possible state including RootVehicle (if riding).
+                // After saving, add the player to bypassSlotRedirect so their subsequent
+                // disconnect-save goes to their personal file, not the slot – this prevents the
+                // disconnect (which fires after stopRiding) from overwriting the slot .dat without
+                // the RootVehicle tag.
+                PlayerManagerInvoker pmInvoker = (PlayerManagerInvoker) server.getPlayerManager();
                 for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
-                    if (p.interactionManager.getGameMode() != GameMode.SPECTATOR
-                            && p.getHealth() > 0.0f) {
-                        stateManager.saveState(p);
-                    }
+                    if (p.interactionManager.getGameMode() == GameMode.SPECTATOR) continue;
+                    if (p.getHealth() <= 0.0f) continue;
+                    if (stateManager.saveHotbar) stateManager.captureHotbarPreference(p);
+                    stateManager.lastPlayerUuid = p.getUuid();
+                    pmInvoker.invokeSavePlayerData(p);
+                    bypassSlotRedirect.add(p.getUuid());
                 }
                 return;
 
@@ -425,25 +345,20 @@ public class SwapMod implements ModInitializer {
                 ModConfig.eyeHoverTicks = in.readInt();
                 return;
 
+            case "slot_uuid":
+                ModConfig.slotUuid = UUID.fromString(in.readUTF());
+                return;
+
             case "incoming_spectator":
-                {
-                    // Pre-notification from Velocity: this player will connect as a watcher
-                    // shortly.
-                    // Mark them so ENTITY_LOAD skips the normal state restore.
-                    pendingSpectators.add(UUID.fromString(in.readUTF()));
-                    return;
-                }
+                pendingSpectators.add(UUID.fromString(in.readUTF()));
+                return;
 
             case "become_spectator":
                 {
                     UUID uuid = UUID.fromString(in.readUTF());
-                    // Cancel any pending state restore – the player should become a spectator,
-                    // not inherit the current server's active player state.
-                    restoreCountdown.remove(uuid);
-                    pendingRestore.remove(uuid);
                     ServerPlayerEntity target = server.getPlayerManager().getPlayer(uuid);
                     if (target == null) return;
-                    // Switch to spectator and lock camera onto the active survival player
+                    // Fallback: if incoming_spectator pre-notification was missed, handle it here.
                     target.interactionManager.setGameMode(
                             GameMode.SPECTATOR, target.interactionManager.getGameMode());
                     sendModeToVelocity(target, true);
@@ -460,8 +375,6 @@ public class SwapMod implements ModInitializer {
                     UUID uuid = UUID.fromString(in.readUTF());
                     ServerPlayerEntity target = server.getPlayerManager().getPlayer(uuid);
                     if (target == null) return;
-                    // Teleport far above to clear spectator rendering, switch to survival.
-                    // Velocity will connect this player to their real server ~4 s later.
                     spectatorCameras.remove(uuid);
                     target.teleport(
                             target.getServerWorld(),
@@ -479,16 +392,14 @@ public class SwapMod implements ModInitializer {
     }
 
     // =========================
-    // RESET (Spielstart)
+    // RESET
     // =========================
 
     private void resetWorldState() {
         finished = false;
-
         server.getPlayerManager()
                 .getPlayerList()
                 .forEach(p -> p.sendMessage(new LiteralText(Lang.newRound(p.getUuid())), false));
-
         freezeWorldTime();
         scoreboardManager.update(finished, completedWorlds, requiredWorlds, currentTime);
     }
