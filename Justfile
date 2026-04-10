@@ -86,7 +86,7 @@ build: build-fabric build-velocity
 # Start Docker Compose setup
 up:
     #!/usr/bin/env bash
-    mkdir data/{velocity/lobby}
+    mkdir -p data/{velocity,lobby}
     PUID=$(id -u) GUID=$(id -g) docker compose up -d
 
 # Stop Docker Compose setup
