@@ -1042,10 +1042,11 @@ public class VelocitySwapPlugin {
                                                 "forceswap",
                                                 "setrotation",
                                                 "spectate",
-                                                "state"));
+                                                "state",
+                                                "seed"));
                             } else if (state == GameState.STARTING) {
                                 // Containers starting – almost nothing useful
-                                subs.retainAll(Arrays.asList("stop", "state"));
+                                subs.retainAll(Arrays.asList("stop", "state", "seed"));
                             } else {
                                 // LOBBY – pre-game config; remove runtime-only commands
                                 subs.removeAll(Arrays.asList("forceswap", "spectate"));
@@ -1098,14 +1099,13 @@ public class VelocitySwapPlugin {
 
                             case "seed":
                                 if (args.length == 2) {
-                                    // Suggest "clear" + slot numbers
                                     int next = worldSeeds.size() + 1;
                                     List<String> slots = new ArrayList<>();
-                                    slots.add("clear");
+                                    if (gameState == GameState.LOBBY) slots.add("clear");
                                     for (int i = 1; i <= next; i++) slots.add(String.valueOf(i));
                                     return filterPrefix(slots, partial);
                                 }
-                                if (args.length == 3)
+                                if (args.length == 3 && gameState == GameState.LOBBY)
                                     return filterPrefix(
                                             Collections.singletonList("clear"), partial);
                                 break;
