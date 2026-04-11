@@ -30,6 +30,15 @@ if [ -d "/opt/config-template" ]; then
   cp -rn /opt/config-template/* /data/ 2>/dev/null || true
 fi
 
+# Write forwarding.secret from VELOCITY_SECRET env var (always overwrite to stay in sync)
+if [ -n "${VELOCITY_SECRET:-}" ]; then
+  mkdir -p /data
+  printf '%s' "$VELOCITY_SECRET" > /data/forwarding.secret
+  echo "→ forwarding.secret written from VELOCITY_SECRET"
+else
+  echo "Warning: VELOCITY_SECRET not set – Velocity forwarding secret may be missing!"
+fi
+
 # Note: MCSRSWAP_GAMESERVER_IMAGE is read directly by the plugin at runtime
 
 # Create symlinks for JARs/plugins
