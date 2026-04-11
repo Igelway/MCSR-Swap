@@ -95,6 +95,8 @@ public class WorldSwapCommands {
             cmdCleanup(src, args);
         }
 
+        plugin.startedWithClean = force;
+
         cmdStartInternal(src, args);
     }
 
@@ -223,6 +225,7 @@ public class WorldSwapCommands {
             plugin.gameState = GameState.LOBBY;
             src.sendMessage(Component.text("§7Cancelling startup…"));
             if (plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
+                boolean removeData = plugin.startedWithClean;
                 plugin.server
                         .getScheduler()
                         .buildTask(
@@ -230,7 +233,7 @@ public class WorldSwapCommands {
                                 () -> {
                                     try {
                                         plugin.dockerManager.stopAllServers();
-                                        plugin.dockerManager.removeAllData();
+                                        if (removeData) plugin.dockerManager.removeAllData();
                                     } catch (Exception e) {
                                         plugin.getLogger()
                                                 .error("Error during startup cancellation", e);
@@ -238,7 +241,13 @@ public class WorldSwapCommands {
                                 })
                         .schedule();
             }
-            src.sendMessage(Component.text("§aStartup cancelled."));
+            src.sendMessage(
+                    Component.text(
+                            plugin.startedWithClean
+                                    ? "§aStartup cancelled. Containers and volumes removed."
+                                    : "§aStartup cancelled. Use §e/ms cleanup§a to also remove"
+                                            + " containers and volumes."));
+            plugin.startedWithClean = false;
             return;
         }
         // Move all players to lobby and end game

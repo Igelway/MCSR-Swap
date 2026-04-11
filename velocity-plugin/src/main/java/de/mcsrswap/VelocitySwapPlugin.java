@@ -96,6 +96,7 @@ public class VelocitySwapPlugin {
     final WorldSwapCommands commands = new WorldSwapCommands(this);
     DockerServerManager dockerManager;
     boolean dockerMode = false;
+    boolean startedWithClean = false;
     private PluginConfig config;
     /** Mutable per-slot seed overrides (0-based). Extends/shrinks as needed via /ms seed. */
     List<Long> worldSeeds = new ArrayList<>();
