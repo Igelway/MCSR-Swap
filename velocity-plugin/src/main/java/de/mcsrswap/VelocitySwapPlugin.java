@@ -449,7 +449,9 @@ public class VelocitySwapPlugin {
             sendToBackend(player, saveMsg);
         }
 
-        // 2. Wait 50 ms, then perform the actual rotation.
+        // 2. Wait 500 ms, then perform the actual rotation.
+        // A longer wait gives the Fabric mod time to finish saving and lets the previous player's
+        // entity fully despawn before the next player arrives, avoiding brief ghost-player sightings.
         server.getScheduler()
                 .buildTask(
                         this,
@@ -471,40 +473,16 @@ public class VelocitySwapPlugin {
                                 String next = servers.get(index);
                                 playerServer.put(player.getUniqueId(), next);
 
-                                // Watching players were already moved to their spectate target at
-                                // preRotation.
-                                // Just advance their logical server; do not re-connect (they will
-                                // be connected
-                                // to 'next' when they finish their spectating period, i.e. at
-                                // preRotation of the
-                                // next cycle or when they were moved by preRotation already).
+                                // Edge case: watcher still present at T=0 (finished <5 s before
+                                // end, preRotation did not fire for them). Route home same as
+                                // preRotation would have done.
                                 if (watchingPlayers.containsKey(player.getUniqueId())) {
-                                    // Update logical server. If the new target is still finished,
-                                    // keep watching.
-                                    Set<String> teamFinished =
-                                            getTeamFinished(player.getUniqueId());
-                                    if (spectateAfterWin && teamFinished.contains(next)) {
-                                        // Stay watching; connect to the spectate target for the new
-                                        // logical server
-                                        String spectateServer =
-                                                findSpectateTarget(player.getUniqueId(), next);
-                                        if (spectateServer != null) {
-                                            watchingPlayers.put(player.getUniqueId(), next);
-                                            final Player p = player;
-                                            server.getServer(spectateServer)
-                                                    .ifPresent(
-                                                            rs ->
-                                                                    p.createConnectionRequest(rs)
-                                                                            .fireAndForget());
-                                            continue;
-                                        }
-                                    }
-                                    // Target is no longer finished – send them there normally
                                     watchingPlayers.remove(player.getUniqueId());
+                                    final Player p = player;
                                     server.getServer(next)
                                             .ifPresent(
                                                     s ->
-                                                            player.createConnectionRequest(s)
+                                                            p.createConnectionRequest(s)
                                                                     .fireAndForget());
                                     continue;
                                 }
@@ -536,29 +514,30 @@ public class VelocitySwapPlugin {
 
                             logger.info("Swapping!");
                         })
-                .delay(50, TimeUnit.MILLISECONDS)
+                .delay(500, TimeUnit.MILLISECONDS)
                 .schedule();
     }
 
     /**
-     * Called 5 seconds before rotation. Sends "prepare_return" to every watching player's current
-     * backend server so the Fabric mod can teleport them far above (clearing spectator visuals) and
-     * switch them to Survival. Velocity will rotate them at T=0 as normal.
+     * Called 5 seconds before rotation. Routes every watching player back to their own assigned
+     * server so they arrive as a normal survival player. This gives them a clean landing before
+     * the T=0 rotation reshuffles everyone, avoids any in-air survival state that would trigger
+     * an anti-cheat kick, and ensures each server has exactly one player again before the swap.
      */
     private void preRotation() {
-        byte[] empty = buildMessage(out -> {}); // placeholder; message is per-player below
         for (Map.Entry<UUID, String> entry : new ArrayList<>(watchingPlayers.entrySet())) {
-            server.getPlayer(entry.getKey())
+            UUID watcherUuid = entry.getKey();
+            watchingPlayers.remove(watcherUuid);
+            String home = playerServer.get(watcherUuid);
+            if (home == null) continue;
+            server.getPlayer(watcherUuid)
                     .ifPresent(
-                            p -> {
-                                sendToBackend(
-                                        p,
-                                        buildMessage(
-                                                out -> {
-                                                    out.writeUTF("prepare_return");
-                                                    out.writeUTF(p.getUniqueId().toString());
-                                                }));
-                            });
+                            p ->
+                                    server.getServer(home)
+                                            .ifPresent(
+                                                    s ->
+                                                            p.createConnectionRequest(s)
+                                                                    .fireAndForget()));
         }
     }
 
@@ -962,6 +941,7 @@ public class VelocitySwapPlugin {
                         "setteamname",
                         "setversus",
                         "state",
+                        "player",
                         "seed",
                         "cleanup");
         final List<String> PLAYER_SUBS = Collections.singletonList("jointeam");
@@ -1016,6 +996,8 @@ public class VelocitySwapPlugin {
                             case "state":
                                 commands.cmdState(src);
                                 break;
+                            case "player":
+                                commands.cmdDebug(src);
                             case "seed":
                                 commands.cmdSeed(src, rest);
                                 break;

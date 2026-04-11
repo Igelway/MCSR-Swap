@@ -6,6 +6,7 @@ import com.velocitypowered.api.proxy.Player;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -65,6 +66,8 @@ public class WorldSwapCommands {
             src.sendMessage(Component.text("§7/ms setrotation <s> §8| §7/ms spectate <player>"));
             src.sendMessage(Component.text("§7/ms setteam <a|b|none> <player...> §8"));
             src.sendMessage(Component.text("§7/ms setteamname <a|b> <name>"));
+            src.sendMessage(Component.text("§7/ms setversus <true|false> §8| §7/ms state §8| §7/ms player"));
+            src.sendMessage(Component.text("§7/ms cleanup §8- §7Stop Docker containers"));
             src.sendMessage(Component.text("§7/ms setversus <true|false> §8| §7/ms state"));
             if (docker) {
                 src.sendMessage(Component.text("§7/ms seed [<i> [<val>|clear]] §8| §7/ms cleanup"));
@@ -566,6 +569,66 @@ public class WorldSwapCommands {
                                 + "§a."));
     }
 
+    void cmdDebug(CommandSource src) {
+        if (!isAdmin(src)) {
+            src.sendMessage(Component.text("§cNo permission!"));
+            return;
+        }
+        src.sendMessage(Component.text("§e=== Player → Server Assignment ==="));
+
+        if (plugin.playerServer.isEmpty()) {
+            src.sendMessage(Component.text("§7No players in game."));
+        } else {
+            for (Map.Entry<UUID, String> entry :
+                    new java.util.TreeMap<>(plugin.playerServer).entrySet()) {
+                UUID uuid = entry.getKey();
+                String logicalServer = entry.getValue();
+
+                String name =
+                        plugin.server
+                                .getPlayer(uuid)
+                                .map(com.velocitypowered.api.proxy.Player::getUsername)
+                                .orElse(uuid.toString().substring(0, 8) + "…");
+
+                String teamPart = "";
+                if (plugin.versusMode) {
+                    String t = plugin.playerTeam.get(uuid);
+                    if ("a".equals(t)) {
+                        teamPart = " §a[" + plugin.teamNameA + "]";
+                    } else if ("b".equals(t)) {
+                        teamPart = " §b[" + plugin.teamNameB + "]";
+                    }
+                }
+
+                String statusPart = "";
+                if (plugin.watchingPlayers.containsKey(uuid)) {
+                    statusPart = " §7(watching)";
+                } else if (plugin.finishedServers.contains(logicalServer)) {
+                    statusPart = " §a(finished)";
+                }
+
+                src.sendMessage(
+                        Component.text(
+                                "§f"
+                                        + name
+                                        + teamPart
+                                        + " §8→ §e"
+                                        + logicalServer
+                                        + statusPart));
+            }
+        }
+
+        if (!plugin.spectators.isEmpty()) {
+            src.sendMessage(Component.text("§7Permanent spectators:"));
+            for (UUID uuid : plugin.spectators) {
+                String name =
+                        plugin.server
+                                .getPlayer(uuid)
+                                .map(com.velocitypowered.api.proxy.Player::getUsername)
+                                .orElse(uuid.toString().substring(0, 8) + "…");
+                src.sendMessage(Component.text("§7  " + name));
+            }
+    
     void cmdSeed(CommandSource src, String[] args) {
         if (!isAdmin(src)) {
             src.sendMessage(Component.text("§cNo permission!"));
