@@ -264,6 +264,8 @@ Only the **Velocity port (default 25565)** needs to be reachable. All game serve
 3. Share the provided `something.mc.gg` address with your friends
 4. No router configuration needed
 
+> **Using Docker?** See [README-DOCKER.md](README-DOCKER.md#playitgg-tunnel-optional) for the integrated Docker Compose setup.
+
 ### Option C – VPN (e.g. ZeroTier / Tailscale)
 
 For small groups who all install a VPN client:

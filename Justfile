@@ -109,11 +109,20 @@ setup-env:
     printf 'VELOCITY_SECRET=%s\n' "$SECRET" >> .env
     echo "✓ Wrote VELOCITY_SECRET to .env"
 
-# Start Docker Compose setup
-up: setup-env
+# Start Docker Compose setup (use --tunnel to also start the playit.gg tunnel)
+[arg("tunnel", long="tunnel", value="true")]
+up tunnel="false": setup-env
     #!/usr/bin/env bash
+    if [ "{{tunnel}}" = "true" ] && [ ! -f .playit.env ]; then
+        echo "Error: .playit.env not found. Copy .playit.env.example and set your SECRET_KEY." >&2
+        exit 1
+    fi
     mkdir -p data/{velocity,lobby}
-    PUID=$(id -u) PGID=$(id -g) docker compose up -d
+    if [ "{{tunnel}}" = "true" ]; then
+        PUID=$(id -u) PGID=$(id -g) docker compose --profile tunnel up -d
+    else
+        PUID=$(id -u) PGID=$(id -g) docker compose up -d
+    fi
 
 # Stop Docker Compose setup
 down:

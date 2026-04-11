@@ -72,9 +72,7 @@ ping-passthrough = "DISABLED"
 lobby = "mcsrswap-lobby:25565"
 
 # In what order we should try servers when a player logs in or is kicked from a server.
-try = [
-  "lobby"
-]
+try = ["lobby"]
 
 [forced-hosts]
 # Configure your forced hosts here.

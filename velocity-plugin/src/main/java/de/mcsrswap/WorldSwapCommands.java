@@ -113,12 +113,12 @@ public class WorldSwapCommands {
             }
 
             int serverCount = participants.size();
-            src.sendMessage(Component.text("§7Starting " + serverCount + " Docker containers…"));
 
             // Mark game as starting to prevent double-start
             plugin.gameState = GameState.STARTING;
 
             // Start servers and wait for them to become healthy
+            src.sendMessage(Component.text("§7Starting " + serverCount + " Docker containers…"));
             plugin.dockerManager
                     .startServersAsync(serverCount)
                     .thenAccept(
