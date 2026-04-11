@@ -4,6 +4,10 @@ import com.google.common.io.ByteArrayDataInput;
 import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
 import de.mcsrswap.mixin.PlayerManagerInvoker;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -15,6 +19,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.network.ServerSidePacketRegistry;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.network.Packet;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.packet.s2c.play.SetCameraEntityS2CPacket;
@@ -89,9 +94,40 @@ public class SwapMod implements ModInitializer {
     // INIT
     // =========================
 
+    /**
+     * Reads the server's slot name from the environment variable {@code MCSRSWAP_SLOT} or from
+     * {@code config/mcsrswap/slot-name.txt} and pre-computes {@link ModConfig#slotUuid}.
+     *
+     * <p>This must run before any player connects because {@code ENTITY_LOAD} (which triggers
+     * player-data loading) fires before the {@code slot_uuid} plugin message from Velocity can
+     * arrive. Without early initialisation, the first player to join each server after a restart
+     * loads their personal {@code .dat} file instead of the shared slot file.
+     *
+     * <p>Velocity still sends {@code slot_uuid} on every connect; that message overrides the value
+     * set here (they should be identical since both sides use the same name-based formula).
+     */
+    private static void initSlotUuid() {
+        String slotName = System.getenv("MCSRSWAP_SLOT");
+        if (slotName == null || slotName.isBlank()) {
+            Path cfg = FabricLoader.getInstance().getConfigDir().resolve("mcsrswap/slot-name.txt");
+            if (Files.exists(cfg)) {
+                try {
+                    slotName = Files.readString(cfg, StandardCharsets.UTF_8).strip();
+                } catch (IOException ignored) {
+                }
+            }
+        }
+        if (slotName != null && !slotName.isBlank()) {
+            ModConfig.slotUuid =
+                    UUID.nameUUIDFromBytes(
+                            ("mcsrswap-slot-" + slotName).getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
     @Override
     public void onInitialize() {
         Lang.init();
+        initSlotUuid();
 
         ServerLifecycleEvents.SERVER_STARTED.register(
                 srv -> {
