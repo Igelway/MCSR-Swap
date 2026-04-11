@@ -69,8 +69,15 @@ services:
       SPAWN_PROTECTION: 0
       MOTD: "MCSR-Swap Lobby"
       MEMORY: 2G
+      MODS_FILE: /extras/mods.txt
+      REMOVE_OLD_MODS: "true"
+      # Run setup script to configure FabricProxy with secret
+      EXEC_BEFORE_SERVER: /extras/setup-fabricproxy.sh
     volumes:
       - ./data/lobby:/data
+      - ./docker/lobby-mods.txt:/extras/mods.txt:ro
+      - ./config-templates/lobby/setup-fabricproxy.sh:/extras/setup-fabricproxy.sh:ro
+      - ./data/velocity/forwarding.secret:/run/secrets/forwarding.secret:ro
     networks:
       - mcsrswap-network
     restart: unless-stopped

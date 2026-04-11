@@ -1,0 +1,5 @@
+# Lobby Server Mods
+# One mod URL per line
+
+# FabricProxy for Velocity support
+https://github.com/OKTW-Network/FabricProxy/releases/download/v1.3.4/FabricProxy-1.3.4.jar
