@@ -997,7 +997,7 @@ public class VelocitySwapPlugin {
                                 commands.cmdState(src);
                                 break;
                             case "player":
-                                commands.cmdDebug(src);
+                                commands.cmdPlayer(src);
                             case "seed":
                                 commands.cmdSeed(src, rest);
                                 break;

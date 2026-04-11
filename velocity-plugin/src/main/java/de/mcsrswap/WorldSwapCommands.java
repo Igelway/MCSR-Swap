@@ -569,7 +569,7 @@ public class WorldSwapCommands {
                                 + "§a."));
     }
 
-    void cmdDebug(CommandSource src) {
+    void cmdPlayer(CommandSource src) {
         if (!isAdmin(src)) {
             src.sendMessage(Component.text("§cNo permission!"));
             return;
@@ -628,7 +628,9 @@ public class WorldSwapCommands {
                                 .orElse(uuid.toString().substring(0, 8) + "…");
                 src.sendMessage(Component.text("§7  " + name));
             }
-    
+        }
+    }
+
     void cmdSeed(CommandSource src, String[] args) {
         if (!isAdmin(src)) {
             src.sendMessage(Component.text("§cNo permission!"));
