@@ -7,7 +7,7 @@
 
     <groupId>de.mcsrswap</groupId>
     <artifactId>mcsrswap-velocity-plugin</artifactId>
-    <version>1.0.4</version>
+    <version>1.0.5</version>
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
