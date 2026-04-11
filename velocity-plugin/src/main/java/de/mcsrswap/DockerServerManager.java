@@ -281,8 +281,20 @@ public class DockerServerManager {
                     .awaitCompletion(5, TimeUnit.MINUTES);
             logger.info("Successfully pulled image: {}", gameServerImage);
         } catch (Exception e) {
-            logger.error("Failed to pull Docker image '{}': {}", gameServerImage, e.getMessage());
-            throw new RuntimeException("Image pull failed: " + gameServerImage, e);
+            logger.warn(
+                    "Failed to pull Docker image '{}': {} – checking for local image…",
+                    gameServerImage,
+                    e.getMessage());
+            try {
+                dockerClient.inspectImageCmd(gameServerImage).exec();
+                logger.info(
+                        "Local image '{}' found, proceeding without registry pull.",
+                        gameServerImage);
+            } catch (Exception inspectEx) {
+                logger.error(
+                        "Image '{}' not available locally either.", gameServerImage, inspectEx);
+                throw new RuntimeException("Image pull failed and no local image: " + gameServerImage, e);
+            }
         }
     }
 
