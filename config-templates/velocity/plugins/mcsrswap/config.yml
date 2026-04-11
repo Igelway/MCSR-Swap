@@ -12,6 +12,13 @@ spectateMinTime: 10
 saveHotbar: true
 eyeHoverTicks: 80
 
+# Optional: fixed world seeds for game servers (Docker mode only).
+# The first seed is used for game1, the second for game2, etc.
+# If fewer seeds than servers are configured, the rest are chosen randomly.
+# worldSeeds:
+#   - 123456789
+#   - -987654321
+
 # Docker mode (auto-enabled in Docker container via MCSRSWAP_DOCKER_MODE env var)
 docker:
   enabled: false

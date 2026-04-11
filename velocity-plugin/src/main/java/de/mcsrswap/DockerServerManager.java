@@ -335,12 +335,17 @@ public class DockerServerManager {
 
         List<String> serverNames = new ArrayList<>();
 
-        // Generate seeds
+        // Build seed list: use configured seeds first, fill remainder with random values
         java.util.Random random = new java.util.Random();
+        List<Long> configSeeds = config.worldSeeds;
         List<Long> seeds = new ArrayList<>();
         int uniqueSeedCount = config.versus ? (count / 2) : count;
         for (int i = 0; i < uniqueSeedCount; i++) {
-            seeds.add(random.nextLong());
+            if (i < configSeeds.size()) {
+                seeds.add(configSeeds.get(i));
+            } else {
+                seeds.add(random.nextLong());
+            }
         }
 
         for (int i = 0; i < count; i++) {
