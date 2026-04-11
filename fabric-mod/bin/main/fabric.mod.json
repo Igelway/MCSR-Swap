@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "mcsrswap",
-  "version": "v1.0.4",
+  "version": "1.0.4",
   "name": "MCSR-Swap",
   "description": "Server-side MCSR-Swap mod (Fabric)",
   "authors": ["Igelway"],
