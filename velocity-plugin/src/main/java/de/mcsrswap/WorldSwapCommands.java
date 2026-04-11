@@ -118,12 +118,9 @@ public class WorldSwapCommands {
             // Mark game as starting to prevent double-start
             plugin.gameState = GameState.STARTING;
 
-            // Generate seed for versus mode (all teams get same seeds)
-            Long seed = plugin.versusMode ? new java.util.Random().nextLong() : null;
-
             // Start servers and wait for them to become healthy
             plugin.dockerManager
-                    .startServersAsync(serverCount, seed)
+                    .startServersAsync(serverCount)
                     .thenAccept(
                             startedServers -> {
                                 if (plugin.gameState != GameState.STARTING) {

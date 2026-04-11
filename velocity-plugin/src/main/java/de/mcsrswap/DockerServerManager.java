@@ -270,12 +270,7 @@ public class DockerServerManager {
      * the list of server names immediately, and the future completes when ready.
      */
     public java.util.concurrent.CompletableFuture<List<String>> startServersAsync(int count) {
-        return startServersAsync(count, null);
-    }
-
-    public java.util.concurrent.CompletableFuture<List<String>> startServersAsync(
-            int count, Long seed) {
-        List<String> serverNames = startServersInternal(count, seed);
+        List<String> serverNames = startServersInternal(count);
         if (serverNames.isEmpty()) {
             return java.util.concurrent.CompletableFuture.completedFuture(serverNames);
         }
@@ -292,14 +287,10 @@ public class DockerServerManager {
     }
 
     public List<String> startServers(int count) {
-        return startServersInternal(count, null);
+        return startServersInternal(count);
     }
 
-    public List<String> startServers(int count, Long seed) {
-        return startServersInternal(count, seed);
-    }
-
-    private List<String> startServersInternal(int count, Long seed) {
+    private List<String> startServersInternal(int count) {
         if (!dockerEnabled) {
             logger.warn("Docker is disabled, cannot start servers");
             return Collections.emptyList();
