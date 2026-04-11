@@ -6,14 +6,14 @@ bind = "0.0.0.0:25577"
 
 # What should be the MOTD? This gets displayed when the player adds your server to
 # their server list. Legacy color codes and JSON are accepted.
-motd = "&3A Velocity Server"
+motd = "MCSR-Swap Server"
 
 # What should we display for the maximum number of players? (Velocity does not support a cap
 # on the number of players online.)
 show-max-players = 500
 
-# Should we authenticate players with Mojang? By default, this is on.
-online-mode = false
+# Should we authenticate players with Mojang? Controlled via VELOCITY_ONLINE_MODE env var.
+online-mode = true
 
 # Should the proxy enforce the new public key security standard? By default, this is on.
 force-key-authentication = true
@@ -34,11 +34,11 @@ prevent-client-proxy-connections = false
 #                  unable to implement network level firewalling (on a shared host).
 # - "modern":      Forward player IPs and UUIDs as part of the login process using
 #                  Velocity's native forwarding. Only applicable for Minecraft 1.13 or higher.
-player-info-forwarding-mode = "NONE"
+player-info-forwarding-mode = "modern"
 
 # If you are using modern or BungeeGuard IP forwarding, configure a file that contains a unique secret here.
 # The file is expected to be UTF-8 encoded and not empty.
-forwarding-secret-file = "forwarding.secret"
+forwarding-secret-file = "/run/secrets/forwarding_secret"
 
 # Announce whether or not your server supports Forge. If you run a modded server, we
 # suggest turning this on.

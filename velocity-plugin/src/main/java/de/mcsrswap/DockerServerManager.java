@@ -281,8 +281,20 @@ public class DockerServerManager {
                     .awaitCompletion(5, TimeUnit.MINUTES);
             logger.info("Successfully pulled image: {}", gameServerImage);
         } catch (Exception e) {
-            logger.error("Failed to pull Docker image '{}': {}", gameServerImage, e.getMessage());
-            throw new RuntimeException("Image pull failed: " + gameServerImage, e);
+            logger.warn(
+                    "Failed to pull Docker image '{}': {} – checking for local image…",
+                    gameServerImage,
+                    e.getMessage());
+            try {
+                dockerClient.inspectImageCmd(gameServerImage).exec();
+                logger.info(
+                        "Local image '{}' found, proceeding without registry pull.",
+                        gameServerImage);
+            } catch (Exception inspectEx) {
+                logger.error(
+                        "Image '{}' not available locally either.", gameServerImage, inspectEx);
+                throw new RuntimeException("Image pull failed and no local image: " + gameServerImage, e);
+            }
         }
     }
 
@@ -291,12 +303,7 @@ public class DockerServerManager {
      * the list of server names immediately, and the future completes when ready.
      */
     public java.util.concurrent.CompletableFuture<List<String>> startServersAsync(int count) {
-        return startServersAsync(count, null);
-    }
-
-    public java.util.concurrent.CompletableFuture<List<String>> startServersAsync(
-            int count, Long seed) {
-        List<String> serverNames = startServersInternal(count, seed);
+        List<String> serverNames = startServersInternal(count);
         if (serverNames.isEmpty()) {
             return java.util.concurrent.CompletableFuture.completedFuture(serverNames);
         }
@@ -313,14 +320,10 @@ public class DockerServerManager {
     }
 
     public List<String> startServers(int count) {
-        return startServersInternal(count, null);
+        return startServersInternal(count);
     }
 
-    public List<String> startServers(int count, Long seed) {
-        return startServersInternal(count, seed);
-    }
-
-    private List<String> startServersInternal(int count, Long seed) {
+    private List<String> startServersInternal(int count) {
         if (!dockerEnabled) {
             logger.warn("Docker is disabled, cannot start servers");
             return Collections.emptyList();
@@ -333,18 +336,21 @@ public class DockerServerManager {
 
         List<String> serverNames = new ArrayList<>();
 
-        // Generate seeds
+        // Build seed list: use configured seeds first, fill remainder with random values
         java.util.Random random = new java.util.Random();
+        List<Long> configSeeds = plugin.worldSeeds;
         List<Long> seeds = new ArrayList<>();
-        int uniqueSeedCount = config.versus ? (count / 2) : count;
+        boolean versus = plugin.versusMode;
+        int uniqueSeedCount = versus ? (count / 2) : count;
         for (int i = 0; i < uniqueSeedCount; i++) {
-            seeds.add(random.nextLong());
+            Long configured = i < configSeeds.size() ? configSeeds.get(i) : null;
+            seeds.add(configured != null ? configured : random.nextLong());
         }
 
         for (int i = 0; i < count; i++) {
             String serverName = config.gameServerPrefix + (i + 1);
             // In versus mode, pair seeds: servers 0&2, 1&3 get same seed
-            int seedIndex = config.versus ? (i % uniqueSeedCount) : i;
+            int seedIndex = versus ? (i % uniqueSeedCount) : i;
             long worldSeed = seeds.get(seedIndex);
             try {
                 String containerId = createGameServer(serverName, worldSeed);
@@ -457,9 +463,30 @@ public class DockerServerManager {
 
         // Use named volume for gameserver data (Docker manages it automatically)
 
-        // Secret is at dataPath/velocity/forwarding.secret on host, but mounted to gameserver at
-        // /run/secrets/velocity_secret
-        String absSecretPath = dataPath + "/velocity/forwarding.secret";
+        java.nio.file.Path secretFile =
+                java.nio.file.Paths.get(
+                        System.getenv()
+                                .getOrDefault(
+                                        "VELOCITY_SECRET_FILE",
+                                        "/run/secrets/forwarding_secret"));
+        // Fallback: <pluginDataDir>/../../forwarding.secret (Velocity root, manual-mode default)
+        if (!java.nio.file.Files.exists(secretFile)) {
+            secretFile =
+                    plugin.dataDirectory
+                            .resolve("../../forwarding.secret")
+                            .toAbsolutePath()
+                            .normalize();
+        }
+        String fabricProxySecret = "";
+        try {
+            fabricProxySecret = java.nio.file.Files.readString(secretFile).strip();
+        } catch (Exception e) {
+            logger.warn(
+                    "Could not read Velocity forwarding secret from {} – game servers will have"
+                            + " an empty FABRIC_PROXY_SECRET: {}",
+                    secretFile,
+                    e.getMessage());
+        }
 
         List<String> env =
                 new java.util.ArrayList<>(
@@ -470,7 +497,8 @@ public class DockerServerManager {
                                 "MEMORY=2G",
                                 "TYPE=FABRIC",
                                 "VERSION=1.16.1",
-                                "VELOCITY_SECRET_FILE=/run/secrets/velocity_secret",
+                                "FABRIC_PROXY_VELOCITY=true",
+                                "FABRIC_PROXY_SECRET=" + fabricProxySecret,
                                 "SEED=" + seedStr,
                                 "PUID=" + System.getenv().getOrDefault("PUID", "1000"),
                                 "PGID=" + System.getenv().getOrDefault("PGID", "1000")));
@@ -486,12 +514,7 @@ public class DockerServerManager {
                                 HostConfig.newHostConfig()
                                         .withNetworkMode(networkName)
                                         .withMemory(2147483648L)
-                                        .withBinds(
-                                                new Bind(volumeNameForServer, new Volume("/data")),
-                                                new Bind(
-                                                        absSecretPath,
-                                                        new Volume("/run/secrets/velocity_secret"),
-                                                        AccessMode.ro)))
+                                        .withBinds(new Bind(volumeNameForServer, new Volume("/data"))))
                         .exec();
 
         dockerClient.startContainerCmd(container.getId()).exec();
@@ -604,29 +627,49 @@ public class DockerServerManager {
     public void stopAllServers() {
         if (!dockerEnabled) return;
 
-        logger.info("Stopping {} game servers...", serverContainers.size());
+        // Discover all managed containers via label so we catch containers that were started by a
+        // previous plugin instance (after a proxy restart the in-memory map is empty).
+        Map<String, String> toStop = new java.util.LinkedHashMap<>(serverContainers);
+        try {
+            dockerClient
+                    .listContainersCmd()
+                    .withShowAll(true)
+                    .withLabelFilter(List.of("mcsrswap.managed=true"))
+                    .exec()
+                    .forEach(
+                            c -> {
+                                String name =
+                                        c.getNames() != null && c.getNames().length > 0
+                                                ? c.getNames()[0].replaceFirst("^/", "")
+                                                : c.getId();
+                                toStop.putIfAbsent(name, c.getId());
+                            });
+        } catch (Exception e) {
+            logger.warn(
+                    "Could not list managed containers via label; relying on tracked map: {}",
+                    e.getMessage());
+        }
 
-        // Collect server names BEFORE removing from map
-        List<String> serverNames = new ArrayList<>(serverContainers.keySet());
+        logger.info("Stopping {} game server(s)...", toStop.size());
 
-        for (String serverName : serverNames) {
-            String containerId = serverContainers.get(serverName);
-            if (containerId == null) continue;
-
+        for (Map.Entry<String, String> entry : toStop.entrySet()) {
+            String containerRef = entry.getKey();
+            String containerId = entry.getValue();
             try {
-                // Force remove (stops and removes in one operation)
                 dockerClient.removeContainerCmd(containerId).withForce(true).exec();
-
+                // Derive logical server name from container name (strip "mcsrswap-" prefix)
+                String serverName =
+                        containerRef.startsWith("mcsrswap-")
+                                ? containerRef.substring("mcsrswap-".length())
+                                : containerRef;
                 server.getServer(serverName)
                         .ifPresent(rs -> server.unregisterServer(rs.getServerInfo()));
-
-                logger.info("Stopped and removed container: {}", serverName);
+                logger.info("Stopped and removed container: {}", containerRef);
             } catch (Exception e) {
-                logger.error("Failed to stop/remove server {}", serverName, e);
+                logger.error("Failed to stop/remove container {}", containerRef, e);
             }
         }
 
-        // Clear map after all operations
         serverContainers.clear();
     }
 

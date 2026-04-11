@@ -1,7 +1,0 @@
-# Velocity modern forwarding secret
-# This will be automatically populated from the shared secret file if running in Docker
-# secret = "your-secret-here"
-
-hackOnlineMode = true
-hackEarlySend = false
-hackMessageChain = false

@@ -4,8 +4,8 @@ You can play as one team or one team versus another team. The project consists o
 
 | File | Where it goes |
 |---|---|
-| `mcsrswap-fabric-mod-1.0.3.jar` | `mods/` folder of every game server |
-| `mcsrswap-velocity-plugin-1.0.3.jar` | `plugins/` folder of the Velocity proxy |
+| `mcsrswap-fabric-mod-v1.0.4.jar` | `mods/` folder of every game server |
+| `mcsrswap-velocity-plugin-v1.0.4.jar` | `plugins/` folder of the Velocity proxy |
 
 ---
 
@@ -35,7 +35,7 @@ See **[README-DOCKER.md](README-DOCKER.md)** for a simplified Docker-based setup
 
 ### Required mods on every game server
 
-These must be present in `mods/` alongside `mcsrswap-fabric-mod-1.0.3.jar`:
+These must be present in `mods/` alongside `mcsrswap-fabric-mod-v1.0.4.jar`:
 
 - [`fabric-api-0.18.0+build.387-1.16.1.jar`](https://modrinth.com/mod/fabric-api/version/0.18.0+build.387-1.16.1)
 - FabricProxy 1.3.4 – enables Velocity modern forwarding for 1.16.1.  
@@ -66,26 +66,27 @@ Players **only ever connect to the Velocity port**. All game server ports must b
 
 ### 1.1 Install the plugin
 
-Copy `mcsrswap-velocity-plugin-1.0.3.jar` into `plugins/`.
+Copy `mcsrswap-velocity-plugin-v1.0.4.jar` into `plugins/`.
 
 ### 1.2 Configure `velocity.toml`
 
-```toml
-# Players connect here
-bind = "0.0.0.0:25565"
+A ready-to-use starting point is provided in [`defaults/velocity/velocity.toml`](defaults/velocity/velocity.toml). Copy it into your Velocity working directory and adjust the server addresses:
 
-online-mode = true
-player-info-forwarding-mode = "modern"
+```bash
+cp defaults/velocity/velocity.toml <velocity-dir>/velocity.toml
+```
+
+Key values to review:
+
+```toml
+online-mode = true                        # set to false for LAN / offline play
+player-info-forwarding-mode = "modern"    # required — do not change
 forwarding-secret-file = "forwarding.secret"
 
 [servers]
-lobby = "127.0.0.1:25570"
-game1 = "127.0.0.1:25571"
-game2 = "127.0.0.1:25572"
-# Add more game servers here – name them game3, game4, etc.
-# The prefix "game" and lobby name "lobby" can be changed in plugins/mcsrswap/config.yml on your Velocity server.
-
-try = ["lobby"]
+lobby = "127.0.0.1:25566"
+game1 = "127.0.0.1:25600"
+game2 = "127.0.0.1:25601"
 ```
 
 > **Important:** Server names must match `gameServerPrefix` (default: `game`) and `lobbyServerName` (default: `lobby`) in the MCSR-Swap config.
@@ -102,6 +103,12 @@ On first start, Velocity creates:
 plugins/mcsrswap/config.yml
 plugins/mcsrswap/languages/en_us.yml
 plugins/mcsrswap/languages/de_de.yml
+```
+
+A fully-documented starting point is provided in [`defaults/velocity/plugins/mcsrswap/config.yml`](defaults/velocity/plugins/mcsrswap/config.yml). Copy it into place before the first start to avoid having to hunt for option names:
+
+```bash
+cp defaults/velocity/plugins/mcsrswap/config.yml <velocity-dir>/plugins/mcsrswap/config.yml
 ```
 
 **`config.yml`:**
@@ -135,11 +142,19 @@ Do the following for **each** game server (game1, game2, …).
 
 ### 2.1 server.properties
 
-```properties
-server-port=25571          # Use 25571 for game1, 25572 for game2, etc.
-online-mode=false          # Must be false – authentication is handled by Velocity
-spawn-protection=0         # Players must be able to break blocks everywhere; set this to 0
+A minimal starting point is provided in [`defaults/gameserver/server.properties`](defaults/gameserver/server.properties). Copy it to each game server's working directory:
+
+```bash
+cp defaults/gameserver/server.properties <gameN-dir>/server.properties
 ```
+
+Then set the port for each server:
+
+```properties
+server-port=25600   # 25600 for game1, 25601 for game2, etc.
+```
+
+> **`online-mode=false` is mandatory** — authentication is handled by Velocity. Leaving it at the vanilla default (`true`) causes UUID mismatches and players cannot connect.
 
 ### 2.2 Enable Velocity modern forwarding (FabricProxy)
 
@@ -160,7 +175,7 @@ Replace the secret with the value from Velocity's `forwarding.secret` file.
 Place the following in `mods/`:
 
 ```
-mcsrswap-fabric-mod-1.0.3.jar
+mcsrswap-fabric-mod-v1.0.4.jar
 fabric-api-0.18.0+build.387-1.16.1.jar
 FabricProxy-1.3.4.jar
 ```
@@ -201,7 +216,8 @@ All commands run through the Velocity proxy. Prefix: `/ms`
 
 | Command | Description |
 |---|---|
-| `/ms start` | Start the game and send players to their servers |
+| `/ms start` | Start the game (reuses existing Docker containers if present) |
+| `/ms start --clean` | Start the game after removing old Docker containers and volumes |
 | `/ms stop` | End the game and send everyone to the lobby |
 | `/ms forceswap` | Immediately rotate all players to the next server |
 | `/ms setrotation <seconds>` | Change the rotation interval (minimum 10 s) |
@@ -209,6 +225,9 @@ All commands run through the Velocity proxy. Prefix: `/ms`
 | `/ms setteam <a\|b\|none> <player> [player2…]` | Assign players to a team (versus mode) |
 | `/ms setteamname <a\|b> <name>` | Set the display name of a team |
 | `/ms setversus <true\|false>` | Enable or disable versus mode |
+| `/ms state` | Show the current game state |
+
+> **Docker mode** adds `/ms start --clean` (cleanup before start) and `/ms cleanup` (remove containers + volumes). See [README-DOCKER.md](README-DOCKER.md).
 
 ### Player commands
 

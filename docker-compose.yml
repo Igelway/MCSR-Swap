@@ -20,6 +20,8 @@ services:
       MCSRSWAP_DOCKER_NETWORK: ${MCSRSWAP_DOCKER_NETWORK:-mcsrswap-network}
       # Docker host URL (uses socket proxy instead of mounting /var/run/docker.sock directly)
       MCSRSWAP_DOCKER_HOST: ${MCSRSWAP_DOCKER_HOST:-tcp://docker-proxy:2375}
+    secrets:
+      - forwarding_secret
     networks:
       - mcsrswap-network
     restart: unless-stopped
@@ -69,8 +71,14 @@ services:
       SPAWN_PROTECTION: 0
       MOTD: "MCSR-Swap Lobby"
       MEMORY: 2G
+      MODS_FILE: /extras/mods.txt
+      REMOVE_OLD_MODS: "true"
+      # FabricProxy configuration via ENV
+      FABRIC_PROXY_VELOCITY: "true"
+      FABRIC_PROXY_SECRET: ${VELOCITY_SECRET}
     volumes:
       - ./data/lobby:/data
+      - ./docker/lobby-mods.txt:/extras/mods.txt:ro
     networks:
       - mcsrswap-network
     restart: unless-stopped
@@ -93,3 +101,7 @@ networks:
   mcsrswap-network:
     name: mcsrswap-network
     driver: bridge
+
+secrets:
+  forwarding_secret:
+    environment: VELOCITY_SECRET

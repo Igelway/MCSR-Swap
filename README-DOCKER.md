@@ -9,16 +9,40 @@
 
 ## Quick Start
 
-1. **Start the services**:
+1. **Create your `.env` file** (copy the example and adjust as needed):
+   ```bash
+   cp .env.example .env
+   ```
+   Key settings in `.env`:
+   - `VELOCITY_ONLINE_MODE=true` — set to `false` for LAN/offline play
+   - `PUID` / `PGID` — your host user's UID/GID (`id -u` / `id -g`)
+   - Image overrides if you built locally
+
+2. **Start the services** (generates `VELOCITY_SECRET` automatically if not set):
    ```bash
    just up
    ```
 
-2. **Connect to the server**: `localhost:25565`
+3. **Connect to the server**: `localhost:25565`
 
-3. **Admin commands**: Use `/ms <command>` (see main README for available commands)
+4. **Admin commands**: Use `/ms <command>` (see below)
 
-## Available Commands
+## Game Commands (Docker mode)
+
+| Command | Description |
+|---|---|
+| `/ms start` | Start the game, reusing existing containers |
+| `/ms start --clean` | Clean up old containers/volumes, then start fresh |
+| `/ms cleanup` | Stop and remove all game server containers and volumes |
+| `/ms seed` | List configured world seeds |
+| `/ms seed <i> <seed>` | Set the fixed seed for slot `i` (e.g. `/ms seed 1 -123456`) |
+| `/ms seed <i> clear` | Remove the fixed seed for slot `i` (uses random) |
+| `/ms seed clear` | Clear all fixed seeds for all slots (all games use random seeds) |
+
+In **versus mode**, seeds are mirrored between teams: setting or clearing seed slot `i` applies to the corresponding slot on both Team A and Team B. In other words, the second half of server slots reuses the first half's seeds.
+For all other commands see the [main README](README.md#commands).
+
+## Available `just` Commands
 
 - **`just up`** - Start all servers
 - **`just up --tunnel`** - Start all servers + playit.gg tunnel

@@ -61,12 +61,17 @@ public class WorldSwapCommands {
     void sendHelp(CommandSource src) {
         src.sendMessage(Component.text("§eWorldSwap commands:"));
         if (isAdmin(src)) {
-            src.sendMessage(Component.text("§7/ms start §8| §7/ms stop §8| §7/ms forceswap"));
+            boolean docker = plugin.dockerMode;
+            src.sendMessage(Component.text("§7/ms start [--clean] §8| §7/ms stop §8| §7/ms forceswap"));
             src.sendMessage(Component.text("§7/ms setrotation <s> §8| §7/ms spectate <player>"));
             src.sendMessage(Component.text("§7/ms setteam <a|b|none> <player...> §8"));
             src.sendMessage(Component.text("§7/ms setteamname <a|b> <name>"));
             src.sendMessage(Component.text("§7/ms setversus <true|false> §8| §7/ms state §8| §7/ms player"));
             src.sendMessage(Component.text("§7/ms cleanup §8- §7Stop Docker containers"));
+            src.sendMessage(Component.text("§7/ms setversus <true|false> §8| §7/ms state"));
+            if (docker) {
+                src.sendMessage(Component.text("§7/ms seed [<i> [<val>|clear]] §8| §7/ms cleanup"));
+            }
         }
         src.sendMessage(Component.text("§7/ms jointeam <a|b>"));
     }
@@ -85,29 +90,20 @@ public class WorldSwapCommands {
             return;
         }
 
-        // Cleanup before starting in Docker mode
-        if (plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
+        boolean force =
+                Arrays.stream(args).anyMatch(a -> a.equalsIgnoreCase("--clean"));
+
+        if (force && plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
             src.sendMessage(Component.text("§7Cleaning up old containers and volumes..."));
             cmdCleanup(src, args);
         }
 
-        cmdResume(src, args);
+        plugin.startedWithClean = force;
+
+        cmdStartInternal(src, args);
     }
 
-    void cmdResume(CommandSource src, String[] args) {
-        if (!isAdmin(src)) {
-            src.sendMessage(Component.text("§cNo permission!"));
-            return;
-        }
-        if (plugin.gameState == GameState.RUNNING) {
-            src.sendMessage(Component.text("§cGame is already running!"));
-            return;
-        }
-        if (plugin.gameState == GameState.STARTING) {
-            src.sendMessage(Component.text("§cGame is already starting, please wait..."));
-            return;
-        }
-
+    private void cmdStartInternal(CommandSource src, String[] args) {
         if (plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
             List<Player> participants =
                     plugin.server.getAllPlayers().stream()
@@ -124,15 +120,16 @@ public class WorldSwapCommands {
             // Mark game as starting to prevent double-start
             plugin.gameState = GameState.STARTING;
 
-            // Generate seed for versus mode (all teams get same seeds)
-            Long seed = plugin.versusMode ? new java.util.Random().nextLong() : null;
-
             // Start servers and wait for them to become healthy
             src.sendMessage(Component.text("§7Starting " + serverCount + " Docker containers…"));
             plugin.dockerManager
-                    .startServersAsync(serverCount, seed)
+                    .startServersAsync(serverCount)
                     .thenAccept(
                             startedServers -> {
+                                if (plugin.gameState != GameState.STARTING) {
+                                    // Startup was cancelled via /ms stop
+                                    return;
+                                }
                                 if (startedServers.isEmpty()) {
                                     src.sendMessage(
                                             Component.text("§cFailed to start Docker containers!"));
@@ -225,8 +222,32 @@ public class WorldSwapCommands {
             return;
         }
         if (plugin.gameState == GameState.STARTING) {
+            plugin.gameState = GameState.LOBBY;
+            src.sendMessage(Component.text("§7Cancelling startup…"));
+            if (plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
+                boolean removeData = plugin.startedWithClean;
+                plugin.server
+                        .getScheduler()
+                        .buildTask(
+                                plugin,
+                                () -> {
+                                    try {
+                                        plugin.dockerManager.stopAllServers();
+                                        if (removeData) plugin.dockerManager.removeAllData();
+                                    } catch (Exception e) {
+                                        plugin.getLogger()
+                                                .error("Error during startup cancellation", e);
+                                    }
+                                })
+                        .schedule();
+            }
             src.sendMessage(
-                    Component.text("§cGame is still starting, please wait or restart the server."));
+                    Component.text(
+                            plugin.startedWithClean
+                                    ? "§aStartup cancelled. Containers and volumes removed."
+                                    : "§aStartup cancelled. Use §e/ms cleanup§a to also remove"
+                                            + " containers and volumes."));
+            plugin.startedWithClean = false;
             return;
         }
         // Move all players to lobby and end game
@@ -446,6 +467,10 @@ public class WorldSwapCommands {
             src.sendMessage(Component.text("§cOnly players can use this command."));
             return;
         }
+        if (plugin.gameState != GameState.LOBBY) {
+            src.sendMessage(Component.text("§cTeam assignment is only possible in the lobby."));
+            return;
+        }
         if (args.length != 1) {
             src.sendMessage(Component.text("§eUsage: /ms jointeam <a|b>"));
             src.sendMessage(
@@ -603,6 +628,113 @@ public class WorldSwapCommands {
                                 .orElse(uuid.toString().substring(0, 8) + "…");
                 src.sendMessage(Component.text("§7  " + name));
             }
+    
+    void cmdSeed(CommandSource src, String[] args) {
+        if (!isAdmin(src)) {
+            src.sendMessage(Component.text("§cNo permission!"));
+            return;
+        }
+        if (!plugin.dockerMode) {
+            src.sendMessage(Component.text("§cThis command is only available in Docker mode."));
+            return;
+        }
+
+        // /ms seed  → list all configured seeds
+        if (args.length == 0) {
+            List<Long> seeds = plugin.worldSeeds;
+            if (seeds.stream().noneMatch(s -> s != null)) {
+                src.sendMessage(Component.text("§7No seeds configured (all random)."));
+            } else {
+                src.sendMessage(Component.text("§eConfigured seeds:"));
+                for (int i = 0; i < seeds.size(); i++) {
+                    Long s = seeds.get(i);
+                    src.sendMessage(
+                            Component.text(
+                                    "§7  Game "
+                                            + (i + 1)
+                                            + ": "
+                                            + (s != null ? "§f" + s : "§7(random)")));
+                }
+            }
+            return;
+        }
+
+        // /ms seed clear  → clear all seeds
+        if (args.length == 1 && args[0].equalsIgnoreCase("clear")) {
+            if (plugin.gameState != GameState.LOBBY) {
+                src.sendMessage(Component.text("§cSeeds can only be changed while in the lobby."));
+                return;
+            }
+            plugin.worldSeeds.clear();
+            src.sendMessage(Component.text("§aAll seeds cleared (all games will use random seeds)."));
+            return;
+        }
+
+        int index;
+        try {
+            index = Integer.parseInt(args[0]);
+        } catch (NumberFormatException e) {
+            src.sendMessage(Component.text("§cUsage: /ms seed [<index> [<seed>|clear]]"));
+            return;
+        }
+        if (index < 1) {
+            src.sendMessage(Component.text("§cIndex must be ≥ 1."));
+            return;
+        }
+
+        // /ms seed <index>  → get
+        if (args.length == 1) {
+            List<Long> seeds = plugin.worldSeeds;
+            Long s = index <= seeds.size() ? seeds.get(index - 1) : null;
+            src.sendMessage(
+                    Component.text(
+                            "§7Game "
+                                    + index
+                                    + ": "
+                                    + (s != null ? "§f" + s : "§7(random – no seed configured)")));
+            return;
+        }
+
+        // /ms seed <index> clear  → remove seed (use random)
+        if (args[1].equalsIgnoreCase("clear")) {
+            if (plugin.gameState != GameState.LOBBY) {
+                src.sendMessage(Component.text("§cSeeds can only be changed while in the lobby."));
+                return;
+            }
+            List<Long> seeds = plugin.worldSeeds;
+            if (index <= seeds.size()) {
+                seeds.set(index - 1, null);
+                trimTrailingNulls(seeds);
+            }
+            src.sendMessage(
+                    Component.text("§aGame " + index + " seed cleared (will use random)."));
+            return;
+        }
+
+        // /ms seed <index> <seed>  → set seed
+        if (plugin.gameState != GameState.LOBBY) {
+            src.sendMessage(Component.text("§cSeeds can only be changed while in the lobby."));
+            return;
+        }
+        long seed;
+        try {
+            seed = Long.parseLong(args[1]);
+        } catch (NumberFormatException e) {
+            src.sendMessage(
+                    Component.text("§cInvalid seed value (must be a long or \"clear\")."));
+            return;
+        }
+        List<Long> seeds = plugin.worldSeeds;
+        while (seeds.size() < index) {
+            seeds.add(null);
+        }
+        seeds.set(index - 1, seed);
+        src.sendMessage(Component.text("§aGame " + index + " seed set to §f" + seed + "§a."));
+    }
+
+    private static void trimTrailingNulls(List<Long> list) {
+        while (!list.isEmpty() && list.get(list.size() - 1) == null) {
+            list.remove(list.size() - 1);
         }
     }
 
