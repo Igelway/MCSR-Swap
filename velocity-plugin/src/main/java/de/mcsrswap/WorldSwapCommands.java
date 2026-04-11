@@ -119,7 +119,7 @@ public class WorldSwapCommands {
             }
 
             int serverCount = participants.size();
-            src.sendMessage(Component.text("§7Starting " + serverCount + " Docker containers…"));
+            src.sendMessage(Component.text("§7Pulling game server image…"));
 
             // Mark game as starting to prevent double-start
             plugin.gameState = GameState.STARTING;
@@ -127,9 +127,15 @@ public class WorldSwapCommands {
             // Generate seed for versus mode (all teams get same seeds)
             Long seed = plugin.versusMode ? new java.util.Random().nextLong() : null;
 
-            // Start servers and wait for them to become healthy
-            plugin.dockerManager
-                    .startServersAsync(serverCount, seed)
+            // Pull latest image, then start servers and wait for them to become healthy
+            CompletableFuture.runAsync(() -> plugin.dockerManager.pullImage())
+                    .thenCompose(
+                            _v -> {
+                                src.sendMessage(
+                                        Component.text(
+                                                "§7Starting " + serverCount + " Docker containers…"));
+                                return plugin.dockerManager.startServersAsync(serverCount, seed);
+                            })
                     .thenAccept(
                             startedServers -> {
                                 if (startedServers.isEmpty()) {
