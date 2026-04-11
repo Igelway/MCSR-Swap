@@ -941,7 +941,6 @@ public class VelocitySwapPlugin {
         final List<String> ADMIN_SUBS =
                 Arrays.asList(
                         "start",
-                        "resume",
                         "stop",
                         "forceswap",
                         "setrotation",
@@ -975,9 +974,6 @@ public class VelocitySwapPlugin {
                         switch (sub) {
                             case "start":
                                 commands.cmdStart(src, rest);
-                                break;
-                            case "resume":
-                                commands.cmdResume(src, rest);
                                 break;
                             case "stop":
                                 commands.cmdStop(src, rest);
@@ -1034,6 +1030,12 @@ public class VelocitySwapPlugin {
                         String partial = args[args.length - 1].toLowerCase();
 
                         switch (sub) {
+                            case "start":
+                                if (args.length == 2)
+                                    return filterPrefix(
+                                            Collections.singletonList("--clean"), partial);
+                                break;
+
                             case "spectate":
                                 if (args.length == 2) return onlinePlayers(partial);
                                 break;

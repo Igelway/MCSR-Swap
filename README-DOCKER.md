@@ -16,9 +16,19 @@
 
 2. **Connect to the server**: `localhost:25565`
 
-3. **Admin commands**: Use `/ms <command>` (see main README for available commands)
+3. **Admin commands**: Use `/ms <command>` (see below)
 
-## Available Commands
+## Game Commands (Docker mode)
+
+| Command | Description |
+|---|---|
+| `/ms start` | Start the game, reusing existing containers |
+| `/ms start --clean` | Clean up old containers/volumes, then start fresh |
+| `/ms cleanup` | Stop and remove all game server containers and volumes |
+
+For all other commands see the [main README](README.md#commands).
+
+## Available `just` Commands
 
 - **`just up`** - Start all servers
 - **`just down`** - Stop all servers  

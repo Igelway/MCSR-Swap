@@ -60,7 +60,7 @@ public class WorldSwapCommands {
     void sendHelp(CommandSource src) {
         src.sendMessage(Component.text("§eWorldSwap commands:"));
         if (isAdmin(src)) {
-            src.sendMessage(Component.text("§7/ms start §8| §7/ms stop §8| §7/ms forceswap"));
+            src.sendMessage(Component.text("§7/ms start [--clean] §8| §7/ms stop §8| §7/ms forceswap"));
             src.sendMessage(Component.text("§7/ms setrotation <s> §8| §7/ms spectate <player>"));
             src.sendMessage(Component.text("§7/ms setteam <a|b|none> <player...> §8"));
             src.sendMessage(Component.text("§7/ms setteamname <a|b> <name>"));
@@ -84,29 +84,18 @@ public class WorldSwapCommands {
             return;
         }
 
-        // Cleanup before starting in Docker mode
-        if (plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
+        boolean force =
+                Arrays.stream(args).anyMatch(a -> a.equalsIgnoreCase("--clean"));
+
+        if (force && plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
             src.sendMessage(Component.text("§7Cleaning up old containers and volumes..."));
             cmdCleanup(src, args);
         }
 
-        cmdResume(src, args);
+        cmdStartInternal(src, args);
     }
 
-    void cmdResume(CommandSource src, String[] args) {
-        if (!isAdmin(src)) {
-            src.sendMessage(Component.text("§cNo permission!"));
-            return;
-        }
-        if (plugin.gameState == GameState.RUNNING) {
-            src.sendMessage(Component.text("§cGame is already running!"));
-            return;
-        }
-        if (plugin.gameState == GameState.STARTING) {
-            src.sendMessage(Component.text("§cGame is already starting, please wait..."));
-            return;
-        }
-
+    private void cmdStartInternal(CommandSource src, String[] args) {
         if (plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
             List<Player> participants =
                     plugin.server.getAllPlayers().stream()

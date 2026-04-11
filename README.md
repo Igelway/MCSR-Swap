@@ -201,7 +201,8 @@ All commands run through the Velocity proxy. Prefix: `/ms`
 
 | Command | Description |
 |---|---|
-| `/ms start` | Start the game and send players to their servers |
+| `/ms start` | Start the game (reuses existing Docker containers if present) |
+| `/ms start --clean` | Start the game after removing old Docker containers and volumes |
 | `/ms stop` | End the game and send everyone to the lobby |
 | `/ms forceswap` | Immediately rotate all players to the next server |
 | `/ms setrotation <seconds>` | Change the rotation interval (minimum 10 s) |
@@ -209,6 +210,9 @@ All commands run through the Velocity proxy. Prefix: `/ms`
 | `/ms setteam <a\|b\|none> <player> [player2…]` | Assign players to a team (versus mode) |
 | `/ms setteamname <a\|b> <name>` | Set the display name of a team |
 | `/ms setversus <true\|false>` | Enable or disable versus mode |
+| `/ms state` | Show the current game state |
+
+> **Docker mode** adds `/ms start --clean` (cleanup before start) and `/ms cleanup` (remove containers + volumes). See [README-DOCKER.md](README-DOCKER.md).
 
 ### Player commands
 
