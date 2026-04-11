@@ -213,6 +213,16 @@ public final class PluginConfig {
                 && (envDockerMode.equalsIgnoreCase("true") || envDockerMode.equals("1"))) {
             docker = new Docker(true, docker.image, docker.network, docker.host);
         }
+        String envWorldSeeds = System.getenv("MCSRSWAP_WORLD_SEEDS");
+        if (envWorldSeeds != null && !envWorldSeeds.isBlank()) {
+            worldSeeds.clear();
+            for (String part : envWorldSeeds.split(",")) {
+                try {
+                    worldSeeds.add(Long.parseLong(part.trim()));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
 
         return new PluginConfig(
                 rotation,
