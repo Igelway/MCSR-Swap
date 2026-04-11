@@ -97,6 +97,8 @@ public class VelocitySwapPlugin {
     DockerServerManager dockerManager;
     boolean dockerMode = false;
     private PluginConfig config;
+    /** Mutable per-slot seed overrides (0-based). Extends/shrinks as needed via /ms seed. */
+    List<Long> worldSeeds = new ArrayList<>();
 
     @Inject
     public VelocitySwapPlugin(
@@ -215,6 +217,7 @@ public class VelocitySwapPlugin {
             spectateMinTime = cfg.spectateMinTime;
             saveHotbar = cfg.saveHotbar;
             eyeHoverTicks = cfg.eyeHoverTicks;
+            worldSeeds = new ArrayList<>(cfg.worldSeeds);
 
             logger.info(
                     "Config loaded: rotationTime={}, eyeHoverTicks={}, saveHotbar={},"
@@ -949,6 +952,7 @@ public class VelocitySwapPlugin {
                         "setteamname",
                         "setversus",
                         "state",
+                        "seed",
                         "cleanup");
         final List<String> PLAYER_SUBS = Collections.singletonList("jointeam");
         final List<String> ALL_SUBS;
@@ -1002,6 +1006,9 @@ public class VelocitySwapPlugin {
                             case "state":
                                 commands.cmdState(src);
                                 break;
+                            case "seed":
+                                commands.cmdSeed(src, rest);
+                                break;
                             case "cleanup":
                                 commands.cmdCleanup(src, rest);
                                 break;
@@ -1020,7 +1027,29 @@ public class VelocitySwapPlugin {
                         // First token: suggest subcommand names
                         if (args.length <= 1) {
                             String prefix = args.length == 0 ? "" : args[0].toLowerCase();
-                            List<String> subs = admin ? ALL_SUBS : PLAYER_SUBS;
+                            List<String> subs = new ArrayList<>(admin ? ALL_SUBS : PLAYER_SUBS);
+                            if (!dockerMode) {
+                                subs.remove("seed");
+                                subs.remove("cleanup");
+                            }
+                            // Filter by game state
+                            GameState state = gameState;
+                            if (state == GameState.RUNNING) {
+                                // Game is active – only ops that make sense mid-game
+                                subs.retainAll(
+                                        Arrays.asList(
+                                                "stop",
+                                                "forceswap",
+                                                "setrotation",
+                                                "spectate",
+                                                "state"));
+                            } else if (state == GameState.STARTING) {
+                                // Containers starting – almost nothing useful
+                                subs.retainAll(Arrays.asList("stop", "state"));
+                            } else {
+                                // LOBBY – pre-game config; remove runtime-only commands
+                                subs.removeAll(Arrays.asList("forceswap", "spectate"));
+                            }
                             return subs.stream()
                                     .filter(s -> s.startsWith(prefix))
                                     .collect(Collectors.toList());
@@ -1065,6 +1094,20 @@ public class VelocitySwapPlugin {
                                     return filterPrefix(
                                             Arrays.asList("60", "90", "120", "180", "300"),
                                             partial);
+                                break;
+
+                            case "seed":
+                                if (args.length == 2) {
+                                    // Suggest "clear" + slot numbers
+                                    int next = worldSeeds.size() + 1;
+                                    List<String> slots = new ArrayList<>();
+                                    slots.add("clear");
+                                    for (int i = 1; i <= next; i++) slots.add(String.valueOf(i));
+                                    return filterPrefix(slots, partial);
+                                }
+                                if (args.length == 3)
+                                    return filterPrefix(
+                                            Collections.singletonList("clear"), partial);
                                 break;
                         }
                         return Collections.emptyList();
