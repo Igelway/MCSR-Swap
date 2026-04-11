@@ -23,7 +23,7 @@
 # --- Spectator settings ---
 
 # Send players to spectate another server after finishing their world.
-# spectateAfterWin: false
+# spectateAfterWin: true
 
 # Which server to spectate: "next" or "prev" (relative to the winner's server index).
 # spectateTarget: next

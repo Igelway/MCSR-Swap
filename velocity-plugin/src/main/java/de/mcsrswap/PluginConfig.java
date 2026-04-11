@@ -18,7 +18,7 @@ public final class PluginConfig {
     private static final String DEFAULT_LANGUAGE = "en_US";
     private static final String DEFAULT_GAME_SERVER_PREFIX = "game";
     private static final String DEFAULT_LOBBY_SERVER_NAME = "lobby";
-    private static final boolean DEFAULT_SPECTATE_AFTER_WIN = false;
+    private static final boolean DEFAULT_SPECTATE_AFTER_WIN = true;
     private static final String DEFAULT_SPECTATE_TARGET = "next";
     private static final int DEFAULT_SPECTATE_MIN_TIME = 15;
     private static final boolean DEFAULT_SAVE_HOTBAR = true;
@@ -221,6 +221,14 @@ public final class PluginConfig {
                     worldSeeds.add(Long.parseLong(part.trim()));
                 } catch (NumberFormatException ignored) {
                 }
+            }
+        }
+
+        String envAdmins = System.getenv("MCSRSWAP_ADMINS");
+        if (envAdmins != null && !envAdmins.isBlank()) {
+            for (String part : envAdmins.split(",")) {
+                String entry = part.trim();
+                if (!entry.isEmpty()) admins.add(entry);
             }
         }
 
