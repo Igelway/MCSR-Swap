@@ -7,7 +7,7 @@
 
     <groupId>de.mcsrswap</groupId>
     <artifactId>swap-project</artifactId>
-    <version>1.0.1</version>
+    <version>v1.0.4</version>
     <packaging>pom</packaging>
 
     <modules>
