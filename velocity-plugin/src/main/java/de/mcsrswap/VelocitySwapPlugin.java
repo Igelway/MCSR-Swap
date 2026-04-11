@@ -938,7 +938,7 @@ public class VelocitySwapPlugin {
                         "setteamname",
                         "setversus",
                         "state",
-                        "debug",
+                        "player",
                         "cleanup");
         final List<String> PLAYER_SUBS = Collections.singletonList("jointeam");
         final List<String> ALL_SUBS;
@@ -995,7 +995,7 @@ public class VelocitySwapPlugin {
                             case "state":
                                 commands.cmdState(src);
                                 break;
-                            case "debug":
+                            case "player":
                                 commands.cmdDebug(src);
                                 break;
                             case "cleanup":
