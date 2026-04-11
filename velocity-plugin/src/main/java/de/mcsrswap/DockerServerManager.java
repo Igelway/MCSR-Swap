@@ -265,6 +265,21 @@ public class DockerServerManager {
         return dockerEnabled;
     }
 
+    /** Pull the game server image from the registry. Always pulls to ensure the latest version. */
+    public void pullImage() {
+        logger.info("Pulling Docker image '{}'…", gameServerImage);
+        try {
+            dockerClient
+                    .pullImageCmd(gameServerImage)
+                    .exec(new com.github.dockerjava.api.async.ResultCallback.Adapter<>())
+                    .awaitCompletion(5, TimeUnit.MINUTES);
+            logger.info("Successfully pulled image: {}", gameServerImage);
+        } catch (Exception e) {
+            logger.error("Failed to pull Docker image '{}': {}", gameServerImage, e.getMessage());
+            throw new RuntimeException("Image pull failed: " + gameServerImage, e);
+        }
+    }
+
     /**
      * Start game servers and return a future that completes when all servers are healthy. Returns
      * the list of server names immediately, and the future completes when ready.
@@ -308,30 +323,7 @@ public class DockerServerManager {
         // Get config from plugin
         PluginConfig config = plugin.getPluginConfig();
 
-        // Check if image exists, pull if not
-        try {
-            dockerClient.inspectImageCmd(gameServerImage).exec();
-            logger.info("Using Docker image: {}", gameServerImage);
-        } catch (Exception e) {
-            logger.info(
-                    "Docker image '{}' not found locally. Pulling from registry...",
-                    gameServerImage);
-            try {
-                dockerClient
-                        .pullImageCmd(gameServerImage)
-                        .exec(new com.github.dockerjava.api.async.ResultCallback.Adapter<>())
-                        .awaitCompletion(5, TimeUnit.MINUTES);
-                logger.info("Successfully pulled image: {}", gameServerImage);
-            } catch (Exception pullEx) {
-                logger.error(
-                        "Failed to pull Docker image '{}'. Please pull or build it first: docker"
-                                + " pull {}",
-                        gameServerImage,
-                        gameServerImage,
-                        pullEx);
-                return Collections.emptyList();
-            }
-        }
+        // Image was already pulled before containers are started; nothing to do here.
 
         List<String> serverNames = new ArrayList<>();
 
