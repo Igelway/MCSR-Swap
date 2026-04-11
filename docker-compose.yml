@@ -76,6 +76,19 @@ services:
     restart: unless-stopped
     user: "minecraft:minecraft"
 
+  # Optional tunnel service – only starts when the "tunnel" profile is active.
+  # Run with: docker compose --profile tunnel up -d
+  # Requires a .playit.env file with SECRET_KEY set (copy from .playit.env.example).
+  playit:
+    image: ghcr.io/playit-cloud/playit-agent:latest
+    profiles: ["tunnel"]
+    container_name: mcsrswap-playit
+    network_mode: host
+    env_file:
+      - path: .playit.env
+        required: false
+    restart: unless-stopped
+
 networks:
   mcsrswap-network:
     name: mcsrswap-network
