@@ -25,6 +25,10 @@
 | `/ms start` | Start the game, reusing existing containers |
 | `/ms start --clean` | Clean up old containers/volumes, then start fresh |
 | `/ms cleanup` | Stop and remove all game server containers and volumes |
+| `/ms seed` | List configured world seeds |
+| `/ms seed <i> <seed>` | Set seed for game server `i` (e.g. `/ms seed 1 -123456`) |
+| `/ms seed <i> clear` | Remove fixed seed for game server `i` (uses random) |
+| `/ms seed clear` | Clear all fixed seeds (all games use random seeds) |
 
 For all other commands see the [main README](README.md#commands).
 
