@@ -1,0 +1,68 @@
+# Config version. Do not change this
+config-version = "2.7"
+
+# What port should the proxy be bound to?
+bind = "0.0.0.0:25565"
+
+# MOTD shown in the server list.
+motd = "MCSR-Swap Server"
+
+# Displayed player cap (Velocity does not enforce a real cap).
+show-max-players = 500
+
+# Authenticate players with Mojang. Set to false for LAN / offline play.
+online-mode = true
+
+# Enforce the public key security standard (recommended).
+force-key-authentication = true
+
+# If client's ISP/AS sent from this proxy is different from the one from Mojang's
+# authentication server, the player is kicked. This disallows some VPN and proxy
+# connections but is a weak form of protection.
+prevent-client-proxy-connections = false
+
+# Use Velocity's native modern forwarding (required for MCSR-Swap / FabricProxy).
+player-info-forwarding-mode = "modern"
+
+# Path to the forwarding secret file (relative to the Velocity working directory).
+# Generate one with: openssl rand -base64 12 > forwarding.secret
+# forwarding-secret-file = "forwarding.secret"
+
+announce-forge = false
+kick-existing-players = false
+ping-passthrough = "DISABLED"
+
+[servers]
+# Adjust ports to match your actual server setup.
+# The lobby and game server names must match lobbyServerName / gameServerPrefix in config.yml.
+lobby = "127.0.0.1:25566"
+game1 = "127.0.0.1:25600"
+game2 = "127.0.0.1:25601"
+# game3  = "127.0.0.1:25602"
+# game4  = "127.0.0.1:25603"
+
+# Players are sent here on login.
+try = ["lobby"]
+
+[forced-hosts]
+
+[advanced]
+compression-threshold = 256
+compression-level = -1
+login-ratelimit = 3000
+connection-timeout = 5000
+read-timeout = 30000
+haproxy-protocol = false
+tcp-fast-open = false
+bungee-plugin-message-channel = true
+show-ping-requests = false
+failover-on-unexpected-server-disconnect = true
+announce-proxy-commands = true
+log-command-executions = false
+log-player-connections = true
+
+[query]
+enabled = false
+port = 25565
+map = "Velocity"
+show-plugins = false

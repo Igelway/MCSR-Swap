@@ -45,6 +45,7 @@ public final class PluginConfig {
     public final int eyeHoverTicks;
 
     public final List<String> admins;
+    public final List<Long> worldSeeds;
     public final Docker docker;
 
     public static final class Docker {
@@ -87,6 +88,7 @@ public final class PluginConfig {
             boolean saveHotbar,
             int eyeHoverTicks,
             List<String> admins,
+            List<Long> worldSeeds,
             Docker docker) {
         this.rotationTime = rotationTime;
         this.requiredPercentage = requiredPercentage;
@@ -100,6 +102,7 @@ public final class PluginConfig {
         this.saveHotbar = saveHotbar;
         this.eyeHoverTicks = eyeHoverTicks;
         this.admins = admins == null ? List.of() : List.copyOf(admins);
+        this.worldSeeds = worldSeeds == null ? List.of() : List.copyOf(worldSeeds);
         this.docker = docker;
     }
 
@@ -142,6 +145,21 @@ public final class PluginConfig {
         if (adminsObj instanceof List) {
             for (Object o : (List<Object>) adminsObj) {
                 admins.add(Objects.toString(o, ""));
+            }
+        }
+
+        List<Long> worldSeeds = new ArrayList<>();
+        Object seedsObj = map.get("worldSeeds");
+        if (seedsObj instanceof List) {
+            for (Object o : (List<Object>) seedsObj) {
+                try {
+                    if (o instanceof Number) {
+                        worldSeeds.add(((Number) o).longValue());
+                    } else {
+                        worldSeeds.add(Long.parseLong(Objects.toString(o).trim()));
+                    }
+                } catch (NumberFormatException ignored) {
+                }
             }
         }
 
@@ -195,6 +213,16 @@ public final class PluginConfig {
                 && (envDockerMode.equalsIgnoreCase("true") || envDockerMode.equals("1"))) {
             docker = new Docker(true, docker.image, docker.network, docker.host);
         }
+        String envWorldSeeds = System.getenv("MCSRSWAP_WORLD_SEEDS");
+        if (envWorldSeeds != null && !envWorldSeeds.isBlank()) {
+            worldSeeds.clear();
+            for (String part : envWorldSeeds.split(",")) {
+                try {
+                    worldSeeds.add(Long.parseLong(part.trim()));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
 
         return new PluginConfig(
                 rotation,
@@ -209,6 +237,7 @@ public final class PluginConfig {
                 saveHotbar,
                 eyeHoverTicks,
                 admins,
+                worldSeeds,
                 docker);
     }
 

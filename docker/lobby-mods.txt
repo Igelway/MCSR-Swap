@@ -1,0 +1,8 @@
+# Lobby Server Mods
+# One mod URL per line
+
+# Fabric API (required by FabricProxy)
+https://github.com/FabricMC/fabric-api/releases/download/0.18.0%2Bbuild.387-1.16.1/fabric-api-0.18.0+build.387-1.16.1.jar
+
+# FabricProxy for Velocity support
+https://github.com/OKTW-Network/FabricProxy/releases/download/v1.3.4/FabricProxy-1.3.4.jar

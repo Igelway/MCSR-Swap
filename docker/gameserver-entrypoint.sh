@@ -7,27 +7,6 @@ if [ -d "/opt/config-template" ]; then
   cp -rn /opt/config-template/* /data/ 2>/dev/null || true
 fi
 
-# If VELOCITY_SECRET_FILE is set and exists, update FabricProxy config
-if [ -n "$VELOCITY_SECRET_FILE" ] && [ -f "$VELOCITY_SECRET_FILE" ]; then
-  echo "Configuring FabricProxy with Velocity secret..."
-  mkdir -p /data/config
-  SECRET=$(cat "$VELOCITY_SECRET_FILE")
-
-  # Update or create FabricProxy.toml with secret
-  mkdir -p /data/config/FabricProxy
-  cat >/data/config/FabricProxy/FabricProxy.toml <<EOF
-# FabricProxy Configuration
-hackOnlineMode = true
-hackEarlySend = false
-hackMessageChain = true
-
-[velocity]
-enabled = true
-secret = "$SECRET"
-onlineMode = true
-EOF
-fi
-
 # Create symlinks for mods
 echo "Setting up mod symlinks..."
 
