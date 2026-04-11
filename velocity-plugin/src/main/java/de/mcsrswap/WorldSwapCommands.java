@@ -464,6 +464,10 @@ public class WorldSwapCommands {
             src.sendMessage(Component.text("§cOnly players can use this command."));
             return;
         }
+        if (plugin.gameState != GameState.LOBBY) {
+            src.sendMessage(Component.text("§cTeam assignment is only possible in the lobby."));
+            return;
+        }
         if (args.length != 1) {
             src.sendMessage(Component.text("§eUsage: /ms jointeam <a|b>"));
             src.sendMessage(
@@ -575,7 +579,7 @@ public class WorldSwapCommands {
         // /ms seed  → list all configured seeds
         if (args.length == 0) {
             List<Long> seeds = plugin.worldSeeds;
-            if (seeds.isEmpty()) {
+            if (seeds.stream().noneMatch(s -> s != null)) {
                 src.sendMessage(Component.text("§7No seeds configured (all random)."));
             } else {
                 src.sendMessage(Component.text("§eConfigured seeds:"));
