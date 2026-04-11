@@ -588,6 +588,10 @@ public class WorldSwapCommands {
 
         // /ms seed clear  → clear all seeds
         if (args.length == 1 && args[0].equalsIgnoreCase("clear")) {
+            if (plugin.gameState != GameState.LOBBY) {
+                src.sendMessage(Component.text("§cSeeds can only be changed while in the lobby."));
+                return;
+            }
             plugin.worldSeeds.clear();
             src.sendMessage(Component.text("§aAll seeds cleared (all games will use random seeds)."));
             return;
@@ -620,6 +624,10 @@ public class WorldSwapCommands {
 
         // /ms seed <index> clear  → remove seed (use random)
         if (args[1].equalsIgnoreCase("clear")) {
+            if (plugin.gameState != GameState.LOBBY) {
+                src.sendMessage(Component.text("§cSeeds can only be changed while in the lobby."));
+                return;
+            }
             List<Long> seeds = plugin.worldSeeds;
             if (index <= seeds.size()) {
                 seeds.set(index - 1, null);
@@ -631,6 +639,10 @@ public class WorldSwapCommands {
         }
 
         // /ms seed <index> <seed>  → set seed
+        if (plugin.gameState != GameState.LOBBY) {
+            src.sendMessage(Component.text("§cSeeds can only be changed while in the lobby."));
+            return;
+        }
         long seed;
         try {
             seed = Long.parseLong(args[1]);
