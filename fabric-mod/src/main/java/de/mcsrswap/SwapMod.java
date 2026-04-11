@@ -365,9 +365,10 @@ public class SwapMod implements ModInitializer {
                 PlayerManagerInvoker pmInvoker = (PlayerManagerInvoker) server.getPlayerManager();
                 for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
                     if (p.interactionManager.getGameMode() == GameMode.SPECTATOR) continue;
-                    if (p.getHealth() <= 0.0f) continue;
-                    if (stateManager.saveHotbar) stateManager.captureHotbarPreference(p);
-                    stateManager.lastPlayerUuid = p.getUuid();
+                    if (p.getHealth() > 0.0f) {
+                        if (stateManager.saveHotbar) stateManager.captureHotbarPreference(p);
+                        stateManager.lastPlayerUuid = p.getUuid();
+                    }
                     pmInvoker.invokeSavePlayerData(p);
                     bypassSlotRedirect.add(p.getUuid());
                 }
