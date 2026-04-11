@@ -8,12 +8,14 @@ import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
+
+import org.slf4j.Logger;
+
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import org.slf4j.Logger;
 
 public class DockerServerManager {
 
@@ -193,7 +195,8 @@ public class DockerServerManager {
                 if (hostDataMount == null || hostDataMount.isEmpty()) {
                     // Fallback to a relative './data' path when host mount cannot be determined.
                     logger.warn(
-                            "Could not find host mount for /data in this container; falling back to './data' relative path");
+                            "Could not find host mount for /data in this container; falling back to"
+                                + " './data' relative path");
                     this.dataPath = "./data";
                 } else {
                     java.nio.file.Path hostMountPath =
@@ -211,7 +214,8 @@ public class DockerServerManager {
                             this.dataPath = hostRoot.toString();
                         } else {
                             logger.warn(
-                                    "Invalid host mount path for /data: {}. Falling back to './data'",
+                                    "Invalid host mount path for /data: {}. Falling back to"
+                                        + " './data'",
                                     hostDataMount);
                             this.dataPath = "./data";
                         }
@@ -225,7 +229,8 @@ public class DockerServerManager {
                             this.dataPath = hostRoot.resolve("data").toString();
                         } else {
                             logger.warn(
-                                    "Unexpected host mount path for /data: {}. Falling back to './data'",
+                                    "Unexpected host mount path for /data: {}. Falling back to"
+                                        + " './data'",
                                     hostDataMount);
                             this.dataPath = "./data";
                         }
@@ -233,7 +238,8 @@ public class DockerServerManager {
                 }
             } catch (Exception e) {
                 logger.warn(
-                        "Failed to derive host data path from container mount: {}. Falling back to './data'",
+                        "Failed to derive host data path from container mount: {}. Falling back to"
+                            + " './data'",
                         e.getMessage());
                 this.dataPath = "./data";
             }
@@ -740,7 +746,7 @@ public class DockerServerManager {
                                                                             if (error == null) {
                                                                                 logger.info(
                                                                                         "Server {}"
-                                                                                                + " is pingable",
+                                                                                            + " is pingable",
                                                                                         serverName);
                                                                                 pendingServers
                                                                                         .remove(
@@ -748,9 +754,9 @@ public class DockerServerManager {
                                                                             } else {
                                                                                 logger.debug(
                                                                                         "Server {}"
-                                                                                                + " ping"
-                                                                                                + " failed:"
-                                                                                                + " {}",
+                                                                                            + " ping"
+                                                                                            + " failed:"
+                                                                                            + " {}",
                                                                                         serverName,
                                                                                         error
                                                                                                 .getMessage());

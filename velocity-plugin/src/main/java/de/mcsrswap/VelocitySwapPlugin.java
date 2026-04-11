@@ -125,6 +125,15 @@ public class VelocitySwapPlugin {
                                             logger.error("Error during shutdown cleanup", e);
                                         }
                                     }));
+            // Pull latest image in background during startup
+            java.util.concurrent.CompletableFuture.runAsync(
+                    () -> {
+                        try {
+                            dockerManager.pullImage();
+                        } catch (Exception e) {
+                            logger.warn("Background image pull failed: {}", e.getMessage());
+                        }
+                    });
         }
 
         server.getChannelRegistrar().register(CHANNEL);
