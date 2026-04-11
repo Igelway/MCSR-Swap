@@ -21,7 +21,10 @@
 ## Available Commands
 
 - **`just up`** - Start all servers
+- **`just up --tunnel`** - Start all servers + playit.gg tunnel
 - **`just down`** - Stop all servers  
+- **`just tunnel-start`** - Start the playit.gg tunnel
+- **`just tunnel-stop`** - Stop the playit.gg tunnel
 - **`just attach <service>`** - Attach to server console (e.g. `just attach velocity`, `just attach lobby`, `just attach game1`)
 
 ## Configuration
@@ -40,3 +43,28 @@ Configuration files are automatically created on first startup:
 
 - Check logs: `just logs`
 - Reset everything: `just clean`
+
+## playit.gg Tunnel (optional)
+
+[playit.gg](https://playit.gg) lets you expose the Velocity port to the internet without port forwarding. The Docker Compose setup includes an optional `playit` service that can be started alongside the other containers.
+
+**Setup:**
+
+1. Go to [playit.gg/account/agents/new-docker](https://playit.gg/account/agents/new-docker) and create a Docker agent — copy the `SECRET_KEY` shown there
+2. Copy the template and fill in your key:
+   ```bash
+   cp .playit.env.example .playit.env
+   # then edit .playit.env and set SECRET_KEY=<your key>
+   ```
+3. Start everything including the tunnel:
+   ```bash
+   just up --tunnel
+   ```
+4. Share the provided `something.mc.gg` address with your friends
+
+The `playit` service uses `network_mode: host` so it can reach the Velocity port on `localhost:25565`. The `.playit.env` file is git-ignored and never committed.
+
+To stop only the tunnel without touching the game servers:
+```bash
+docker compose --profile tunnel stop playit
+```

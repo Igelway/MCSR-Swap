@@ -83,11 +83,20 @@ build-velocity:
 # Build both JARs locally
 build: build-fabric build-velocity
 
-# Start Docker Compose setup
-up:
+# Start Docker Compose setup (use --tunnel to also start the playit.gg tunnel)
+[arg("tunnel", long="tunnel", value="true")]
+up tunnel="false":
     #!/usr/bin/env bash
+    if [ "{{tunnel}}" = "true" ] && [ ! -f .playit.env ]; then
+        echo "Error: .playit.env not found. Copy .playit.env.example and set your SECRET_KEY." >&2
+        exit 1
+    fi
     mkdir -p data/{velocity,lobby}
-    PUID=$(id -u) GUID=$(id -g) docker compose up -d
+    if [ "{{tunnel}}" = "true" ]; then
+        PUID=$(id -u) GUID=$(id -g) docker compose --profile tunnel up -d
+    else
+        PUID=$(id -u) GUID=$(id -g) docker compose up -d
+    fi
 
 # Stop Docker Compose setup
 down:
