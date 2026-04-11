@@ -452,7 +452,26 @@ public class DockerServerManager {
 
         // Use named volume for gameserver data (Docker manages it automatically)
 
-        String fabricProxySecret = System.getenv().getOrDefault("VELOCITY_SECRET", "");
+        java.nio.file.Path secretFile =
+                java.nio.file.Paths.get(
+                        System.getenv()
+                                .getOrDefault(
+                                        "VELOCITY_SECRET_FILE",
+                                        plugin.dataDirectory
+                                                .resolve("../../forwarding.secret")
+                                                .toAbsolutePath()
+                                                .normalize()
+                                                .toString()));
+        String fabricProxySecret = "";
+        try {
+            fabricProxySecret = java.nio.file.Files.readString(secretFile).strip();
+        } catch (Exception e) {
+            logger.warn(
+                    "Could not read Velocity forwarding secret from {} – game servers will have"
+                            + " an empty FABRIC_PROXY_SECRET: {}",
+                    secretFile,
+                    e.getMessage());
+        }
 
         List<String> env =
                 new java.util.ArrayList<>(

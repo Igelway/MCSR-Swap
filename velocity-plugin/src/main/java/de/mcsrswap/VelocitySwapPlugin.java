@@ -28,7 +28,7 @@ import org.yaml.snakeyaml.Yaml;
 public class VelocitySwapPlugin {
 
     final ProxyServer server;
-    private final Path dataDirectory;
+    final Path dataDirectory;
     private final Logger logger;
 
     // =========================
