@@ -369,23 +369,6 @@ public class SwapMod implements ModInitializer {
                     }
                     return;
                 }
-
-            case "prepare_return":
-                {
-                    UUID uuid = UUID.fromString(in.readUTF());
-                    ServerPlayerEntity target = server.getPlayerManager().getPlayer(uuid);
-                    if (target == null) return;
-                    spectatorCameras.remove(uuid);
-                    target.teleport(
-                            target.getServerWorld(),
-                            target.getX(),
-                            100000,
-                            target.getZ(),
-                            target.yaw,
-                            target.pitch);
-                    target.interactionManager.setGameMode(GameMode.SURVIVAL, GameMode.SPECTATOR);
-                    return;
-                }
         }
 
         scoreboardManager.update(finished, completedWorlds, requiredWorlds, currentTime);

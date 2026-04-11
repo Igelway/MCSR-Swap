@@ -107,6 +107,12 @@ public class StateManager {
 
     void cleanupDisconnected(Set<UUID> online) {
         clearRegenAfter.keySet().retainAll(online);
-        hotbarPreferences.keySet().retainAll(online);
+        // hotbarPreferences are intentionally NOT pruned here: a player's preference must
+        // survive the brief offline gap during a swap so it can be applied when the next
+        // player (or the same player on the next round) connects to this slot.
+    }
+
+    void clearHotbarPreferences() {
+        hotbarPreferences.clear();
     }
 }
