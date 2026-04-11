@@ -33,7 +33,7 @@ RUN chmod +x /tmp/download-mods.sh && /tmp/download-mods.sh /opt/app-files/mods
 COPY fabric-mod/build/libs/mcsrswap-fabric-mod-*.jar /opt/app-files/mods/
 
 # Copy config template
-COPY config-templates/gameserver/ /opt/config-template/
+COPY defaults/gameserver/ /opt/config-template/
 
 # Copy entrypoint script
 COPY docker/gameserver-entrypoint.sh /gameserver-entrypoint.sh

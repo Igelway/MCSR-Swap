@@ -28,7 +28,7 @@ RUN mkdir -p /opt/app-files/plugins && \
 COPY velocity-plugin/target/mcsrswap-velocity-plugin-*.jar /opt/app-files/plugins/
 
 # Copy config template
-COPY config-templates/velocity/ /opt/config-template/
+COPY defaults/velocity/ /opt/config-template/
 
 # Copy entrypoint script
 COPY docker/velocity-entrypoint.sh /entrypoint.sh
