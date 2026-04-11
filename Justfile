@@ -100,8 +100,8 @@ setup-env:
 [arg("tunnel", long="tunnel", value="true")]
 up tunnel="false": setup-env
     #!/usr/bin/env bash
-    if [ "{{tunnel}}" = "true" ] && [ ! -f .playit.env ]; then
-        echo "Error: .playit.env not found. Copy .playit.env.example and set your SECRET_KEY." >&2
+    if [ "{{tunnel}}" = "true" ] && ! grep -q '^PLAYIT_SECRET=' .env 2>/dev/null; then
+        echo "Error: PLAYIT_SECRET not set in .env. Add your playit.gg agent key (see .env.example)." >&2
         exit 1
     fi
     mkdir -p data/{velocity,lobby}

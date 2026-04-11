@@ -51,7 +51,6 @@ replay_pid*
 # Docker volumes and server data
 data/
 .env
-.playit.env
 .factorypath
 
 !**/gradle/wrapper/gradle-wrapper.jar

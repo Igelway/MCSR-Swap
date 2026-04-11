@@ -75,10 +75,9 @@ Configuration files are automatically created on first startup:
 **Setup:**
 
 1. Go to [playit.gg/account/agents/new-docker](https://playit.gg/account/agents/new-docker) and create a Docker agent — copy the `SECRET_KEY` shown there
-2. Copy the template and fill in your key:
+2. Add the key to your `.env` file:
    ```bash
-   cp .playit.env.example .playit.env
-   # then edit .playit.env and set SECRET_KEY=<your key>
+   PLAYIT_SECRET=<your key>
    ```
 3. Start everything including the tunnel:
    ```bash
@@ -86,7 +85,7 @@ Configuration files are automatically created on first startup:
    ```
 4. Share the provided `something.mc.gg` address with your friends
 
-The `playit` service uses `network_mode: host` so it can reach the Velocity port on `localhost:25565`. The `.playit.env` file is git-ignored and never committed.
+The `playit` service uses `network_mode: host` so it can reach the Velocity port on `localhost:25565`.
 
 To stop only the tunnel without touching the game servers:
 ```bash
