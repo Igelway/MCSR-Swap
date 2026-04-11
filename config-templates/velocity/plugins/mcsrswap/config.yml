@@ -1,30 +1,68 @@
-rotationTime: 300
-requiredPercentage: 0.75
-versus: false
-language: en_US
-gameServerPrefix: game
-lobbyServerName: lobby
+# MCSR-Swap configuration
+# All values shown are defaults. Uncomment and change as needed.
 
-spectateAfterWin: true
-spectateTarget: next
-spectateMinTime: 10
+# Duration of each rotation in seconds.
+# rotationTime: 120
 
-saveHotbar: true
-eyeHoverTicks: 80
+# Fraction of worlds that must be finished to win (0.0 - 1.0).
+# requiredPercentage: 1.0
 
-# Optional: fixed world seeds for game servers (Docker mode only).
-# The first seed is used for game1, the second for game2, etc.
-# If fewer seeds than servers are configured, the rest are chosen randomly.
+# Enable versus mode: players are split into two teams, each team shares a set of servers.
+# versus: false
+
+# Language file to use (from plugins/mcsrswap/languages/).
+# language: en_US
+
+# Prefix used to identify game servers registered in velocity.toml (manual mode)
+# or to name spawned containers (Docker mode).
+# gameServerPrefix: game
+
+# Name of the lobby server as registered in velocity.toml.
+# lobbyServerName: lobby
+
+# --- Spectator settings ---
+
+# Send players to spectate another server after finishing their world.
+# spectateAfterWin: false
+
+# Which server to spectate: "next" or "prev" (relative to the winner's server index).
+# spectateTarget: next
+
+# Minimum seconds remaining in the rotation before spectate kicks in.
+# spectateAfterWin only triggers if the remaining time is >= this value.
+# spectateMinTime: 15
+
+# --- Gameplay tweaks ---
+
+# Remember each player's hotbar layout and restore it across rotations.
+# saveHotbar: true
+
+# How many ticks an Eye of Ender hovers before falling (vanilla default: 80).
+# eyeHoverTicks: 80
+
+# --- Admin list ---
+# Players listed here receive swap.admin permission without needing LuckPerms.
+# Accepts Minecraft UUIDs or usernames.
+# admins:
+#   - "069a79f4-44e9-4726-a5be-fca90e38aaf9"
+#   - SomeUsername
+
+# --- World seeds (Docker mode only) ---
+# Fixed seeds assigned to game servers in order. Servers without a seed get a random one.
 # worldSeeds:
 #   - 123456789
 #   - -987654321
 
-# Docker mode (auto-enabled in Docker container via MCSRSWAP_DOCKER_MODE env var)
-docker:
-  enabled: false
-  network: mcsrswap-network
-
-# Admin users (UUID or username) - these users get swap.admin permission automatically
-# You can also use LuckPerms to manage permissions manually
-# admins:
-  # - "069a79f4-44e9-4726-a5be-fca90e38aaf9"
+# --- Docker mode ---
+# Automatically enabled when the MCSRSWAP_DOCKER_MODE environment variable is set to true.
+# docker:
+#   enabled: false
+#   # Docker image used for spawned game server containers.
+#   # Overridden by MCSRSWAP_GAMESERVER_IMAGE env var.
+#   image: ghcr.io/igelway/mcsr-swap-gameserver:latest
+#   # Docker network that containers are attached to.
+#   # Overridden by MCSRSWAP_DOCKER_NETWORK env var.
+#   network: mcsrswap-network
+#   # Docker daemon URL. Defaults to the system socket.
+#   # Overridden by MCSRSWAP_DOCKER_HOST or DOCKER_HOST env var.
+#   host: tcp://docker-proxy:2375
