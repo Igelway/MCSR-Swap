@@ -35,10 +35,11 @@
 | `/ms start --clean` | Clean up old containers/volumes, then start fresh |
 | `/ms cleanup` | Stop and remove all game server containers and volumes |
 | `/ms seed` | List configured world seeds |
-| `/ms seed <i> <seed>` | Set seed for game server `i` (e.g. `/ms seed 1 -123456`) |
-| `/ms seed <i> clear` | Remove fixed seed for game server `i` (uses random) |
-| `/ms seed clear` | Clear all fixed seeds (all games use random seeds) |
+| `/ms seed <i> <seed>` | Set the fixed seed for slot `i` (e.g. `/ms seed 1 -123456`) |
+| `/ms seed <i> clear` | Remove the fixed seed for slot `i` (uses random) |
+| `/ms seed clear` | Clear all fixed seeds for all slots (all games use random seeds) |
 
+In **versus mode**, seeds are mirrored between teams: setting or clearing seed slot `i` applies to the corresponding slot on both Team A and Team B. In other words, the second half of server slots reuses the first half's seeds.
 For all other commands see the [main README](README.md#commands).
 
 ## Available `just` Commands
