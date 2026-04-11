@@ -1,9 +1,0 @@
-# FabricProxy Configuration
-hackOnlineMode = true
-hackEarlySend = false
-hackMessageChain = true
-
-[velocity]
-enabled = true
-secret = ""
-onlineMode = true

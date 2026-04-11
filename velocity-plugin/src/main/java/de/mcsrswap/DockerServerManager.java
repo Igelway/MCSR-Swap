@@ -461,9 +461,7 @@ public class DockerServerManager {
 
         // Use named volume for gameserver data (Docker manages it automatically)
 
-        // Secret is at dataPath/velocity/forwarding.secret on host, but mounted to gameserver at
-        // /run/secrets/velocity_secret
-        String absSecretPath = dataPath + "/velocity/forwarding.secret";
+        String fabricProxySecret = System.getenv().getOrDefault("VELOCITY_SECRET", "");
 
         List<String> env =
                 new java.util.ArrayList<>(
@@ -474,7 +472,8 @@ public class DockerServerManager {
                                 "MEMORY=2G",
                                 "TYPE=FABRIC",
                                 "VERSION=1.16.1",
-                                "VELOCITY_SECRET_FILE=/run/secrets/velocity_secret",
+                                "FABRIC_PROXY_VELOCITY=true",
+                                "FABRIC_PROXY_SECRET=" + fabricProxySecret,
                                 "SEED=" + seedStr,
                                 "PUID=" + System.getenv().getOrDefault("PUID", "1000"),
                                 "PGID=" + System.getenv().getOrDefault("PGID", "1000")));
@@ -490,12 +489,7 @@ public class DockerServerManager {
                                 HostConfig.newHostConfig()
                                         .withNetworkMode(networkName)
                                         .withMemory(2147483648L)
-                                        .withBinds(
-                                                new Bind(volumeNameForServer, new Volume("/data")),
-                                                new Bind(
-                                                        absSecretPath,
-                                                        new Volume("/run/secrets/velocity_secret"),
-                                                        AccessMode.ro)))
+                                        .withBinds(new Bind(volumeNameForServer, new Volume("/data"))))
                         .exec();
 
         dockerClient.startContainerCmd(container.getId()).exec();

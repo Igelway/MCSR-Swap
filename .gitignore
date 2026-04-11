@@ -54,3 +54,4 @@ data/
 .factorypath
 
 !**/gradle/wrapper/gradle-wrapper.jar
+.env

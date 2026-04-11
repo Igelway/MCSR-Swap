@@ -83,11 +83,37 @@ build-velocity:
 # Build both JARs locally
 build: build-fabric build-velocity
 
+# Generate .env with VELOCITY_SECRET if not already set.
+# If data/velocity/forwarding.secret already exists (Velocity ran before), that value is used.
+# Otherwise a new random secret is generated and written to both places.
+setup-env:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if grep -q "^VELOCITY_SECRET=" .env 2>/dev/null; then
+        echo "✓ VELOCITY_SECRET already set in .env"
+        exit 0
+    fi
+
+    mkdir -p data/velocity
+
+    if [ -f "data/velocity/forwarding.secret" ]; then
+        SECRET=$(cat "data/velocity/forwarding.secret")
+        echo "→ Using existing forwarding.secret"
+    else
+        SECRET=$(openssl rand -base64 12 | tr -d '+/=\n')
+        printf '%s' "$SECRET" > data/velocity/forwarding.secret
+        echo "→ Generated new secret and wrote data/velocity/forwarding.secret"
+    fi
+
+    printf 'VELOCITY_SECRET=%s\n' "$SECRET" >> .env
+    echo "✓ Wrote VELOCITY_SECRET to .env"
+
 # Start Docker Compose setup
-up:
+up: setup-env
     #!/usr/bin/env bash
     mkdir -p data/{velocity,lobby}
-    PUID=$(id -u) GUID=$(id -g) docker compose up -d
+    PUID=$(id -u) PGID=$(id -g) docker compose up -d
 
 # Stop Docker Compose setup
 down:
