@@ -75,7 +75,7 @@ services:
       REMOVE_OLD_MODS: "true"
       # FabricProxy configuration via ENV
       FABRIC_PROXY_VELOCITY: "true"
-      FABRIC_PROXY_SECRET: ${VELOCITY_SECRET:-}
+      FABRIC_PROXY_SECRET: ${VELOCITY_SECRET}
     volumes:
       - ./data/lobby:/data
       - ./docker/lobby-mods.txt:/extras/mods.txt:ro
@@ -104,4 +104,4 @@ networks:
 
 secrets:
   forwarding_secret:
-    file: ./data/velocity/forwarding.secret
+    environment: VELOCITY_SECRET

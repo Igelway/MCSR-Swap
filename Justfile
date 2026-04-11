@@ -83,31 +83,18 @@ build-velocity:
 # Build both JARs locally
 build: build-fabric build-velocity
 
-# Generate .env with VELOCITY_SECRET if not already set.
-# If data/velocity/forwarding.secret already exists (Velocity ran before), that value is used.
-# Otherwise a new random secret is generated and written to both places.
+# Generate VELOCITY_SECRET in .env if not already set.
 setup-env:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    if grep -q "^VELOCITY_SECRET=" .env 2>/dev/null; then
+    if grep -q '^VELOCITY_SECRET=' .env 2>/dev/null; then
         echo "✓ VELOCITY_SECRET already set in .env"
-        exit 0
-    fi
-
-    mkdir -p data/velocity
-
-    if [ -f "data/velocity/forwarding.secret" ]; then
-        SECRET=$(cat "data/velocity/forwarding.secret")
-        echo "→ Using existing forwarding.secret"
     else
         SECRET=$(openssl rand -base64 12 | tr -d '+/=\n')
-        printf '%s' "$SECRET" > data/velocity/forwarding.secret
-        echo "→ Generated new secret and wrote data/velocity/forwarding.secret"
+        printf '\nVELOCITY_SECRET=%s\n' "$SECRET" >> .env
+        echo "→ Generated VELOCITY_SECRET and appended to .env"
     fi
-
-    printf 'VELOCITY_SECRET=%s\n' "$SECRET" >> .env
-    echo "✓ Wrote VELOCITY_SECRET to .env"
 
 # Start Docker Compose setup (use --tunnel to also start the playit.gg tunnel)
 [arg("tunnel", long="tunnel", value="true")]
@@ -118,6 +105,15 @@ up tunnel="false": setup-env
         exit 1
     fi
     mkdir -p data/{velocity,lobby}
+    # Ensure forwarding-secret-file points to the Docker secret mount path
+    if [ -f "data/velocity/velocity.toml" ]; then
+        sed -i 's|^forwarding-secret-file = .*|forwarding-secret-file = "/run/secrets/forwarding_secret"|' data/velocity/velocity.toml
+        echo "✓ Patched forwarding-secret-file in data/velocity/velocity.toml"
+        if [ -n "${VELOCITY_FORWARDING_MODE:-}" ]; then
+            sed -i "s|^player-info-forwarding-mode = .*|player-info-forwarding-mode = \"${VELOCITY_FORWARDING_MODE}\"|" data/velocity/velocity.toml
+            echo "✓ Patched player-info-forwarding-mode=${VELOCITY_FORWARDING_MODE}"
+        fi
+    fi
     if [ "{{tunnel}}" = "true" ]; then
         PUID=$(id -u) PGID=$(id -g) docker compose --profile tunnel up -d
     else

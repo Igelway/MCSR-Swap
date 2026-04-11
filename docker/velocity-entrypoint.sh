@@ -33,6 +33,10 @@ fi
 # Apply runtime-configurable settings to velocity.toml (runs every start so env changes take effect)
 if [ -f "/data/velocity.toml" ]; then
   sed -i "s/^online-mode = .*/online-mode = ${VELOCITY_ONLINE_MODE:-true}/" /data/velocity.toml
+  sed -i 's|^forwarding-secret-file = .*|forwarding-secret-file = "/run/secrets/forwarding_secret"|' /data/velocity.toml
+  if [ -n "${VELOCITY_FORWARDING_MODE:-}" ]; then
+    sed -i "s|^player-info-forwarding-mode = .*|player-info-forwarding-mode = \"${VELOCITY_FORWARDING_MODE}\"|" /data/velocity.toml
+  fi
 fi
 
 # Note: MCSRSWAP_GAMESERVER_IMAGE is read directly by the plugin at runtime

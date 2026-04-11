@@ -456,11 +456,15 @@ public class DockerServerManager {
                         System.getenv()
                                 .getOrDefault(
                                         "VELOCITY_SECRET_FILE",
-                                        plugin.dataDirectory
-                                                .resolve("../../forwarding.secret")
-                                                .toAbsolutePath()
-                                                .normalize()
-                                                .toString()));
+                                        "/run/secrets/forwarding_secret"));
+        // Fallback: <pluginDataDir>/../../forwarding.secret (Velocity root, manual-mode default)
+        if (!java.nio.file.Files.exists(secretFile)) {
+            secretFile =
+                    plugin.dataDirectory
+                            .resolve("../../forwarding.secret")
+                            .toAbsolutePath()
+                            .normalize();
+        }
         String fabricProxySecret = "";
         try {
             fabricProxySecret = java.nio.file.Files.readString(secretFile).strip();
