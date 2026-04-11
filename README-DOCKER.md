@@ -9,14 +9,23 @@
 
 ## Quick Start
 
-1. **Start the services**:
+1. **Create your `.env` file** (copy the example and adjust as needed):
+   ```bash
+   cp .env.example .env
+   ```
+   Key settings in `.env`:
+   - `VELOCITY_ONLINE_MODE=true` — set to `false` for LAN/offline play
+   - `PUID` / `PGID` — your host user's UID/GID (`id -u` / `id -g`)
+   - Image overrides if you built locally
+
+2. **Start the services** (generates `VELOCITY_SECRET` automatically if not set):
    ```bash
    just up
    ```
 
-2. **Connect to the server**: `localhost:25565`
+3. **Connect to the server**: `localhost:25565`
 
-3. **Admin commands**: Use `/ms <command>` (see below)
+4. **Admin commands**: Use `/ms <command>` (see below)
 
 ## Game Commands (Docker mode)
 

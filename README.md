@@ -70,22 +70,23 @@ Copy `mcsrswap-velocity-plugin-1.0.3.jar` into `plugins/`.
 
 ### 1.2 Configure `velocity.toml`
 
-```toml
-# Players connect here
-bind = "0.0.0.0:25565"
+A ready-to-use starting point is provided in [`defaults/velocity/velocity.toml`](defaults/velocity/velocity.toml). Copy it into your Velocity working directory and adjust the server addresses:
 
-online-mode = true
-player-info-forwarding-mode = "modern"
+```bash
+cp defaults/velocity/velocity.toml <velocity-dir>/velocity.toml
+```
+
+Key values to review:
+
+```toml
+online-mode = true                        # set to false for LAN / offline play
+player-info-forwarding-mode = "modern"    # required — do not change
 forwarding-secret-file = "forwarding.secret"
 
 [servers]
-lobby = "127.0.0.1:25570"
-game1 = "127.0.0.1:25571"
-game2 = "127.0.0.1:25572"
-# Add more game servers here – name them game3, game4, etc.
-# The prefix "game" and lobby name "lobby" can be changed in plugins/mcsrswap/config.yml on your Velocity server.
-
-try = ["lobby"]
+lobby = "127.0.0.1:25566"
+game1 = "127.0.0.1:25600"
+game2 = "127.0.0.1:25601"
 ```
 
 > **Important:** Server names must match `gameServerPrefix` (default: `game`) and `lobbyServerName` (default: `lobby`) in the MCSR-Swap config.
@@ -102,6 +103,12 @@ On first start, Velocity creates:
 plugins/mcsrswap/config.yml
 plugins/mcsrswap/languages/en_us.yml
 plugins/mcsrswap/languages/de_de.yml
+```
+
+A fully-documented starting point is provided in [`defaults/velocity/plugins/mcsrswap/config.yml`](defaults/velocity/plugins/mcsrswap/config.yml). Copy it into place before the first start to avoid having to hunt for option names:
+
+```bash
+cp defaults/velocity/plugins/mcsrswap/config.yml <velocity-dir>/plugins/mcsrswap/config.yml
 ```
 
 **`config.yml`:**
@@ -135,11 +142,19 @@ Do the following for **each** game server (game1, game2, …).
 
 ### 2.1 server.properties
 
-```properties
-server-port=25571          # Use 25571 for game1, 25572 for game2, etc.
-online-mode=false          # Must be false – authentication is handled by Velocity
-spawn-protection=0         # Players must be able to break blocks everywhere; set this to 0
+A minimal starting point is provided in [`defaults/gameserver/server.properties`](defaults/gameserver/server.properties). Copy it to each game server's working directory:
+
+```bash
+cp defaults/gameserver/server.properties <gameN-dir>/server.properties
 ```
+
+Then set the port for each server:
+
+```properties
+server-port=25600   # 25600 for game1, 25601 for game2, etc.
+```
+
+> **`online-mode=false` is mandatory** — authentication is handled by Velocity. Leaving it at the vanilla default (`true`) causes UUID mismatches and players cannot connect.
 
 ### 2.2 Enable Velocity modern forwarding (FabricProxy)
 
