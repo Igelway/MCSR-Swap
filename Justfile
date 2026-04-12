@@ -95,11 +95,11 @@ setup-env:
         echo "→ Generated .forwarding.secret"
     fi
 
-# Start Docker Compose setup (use --tunnel to also start the playit.gg tunnel)
-[arg("tunnel", long="tunnel", value="true")]
-up tunnel="false": setup-env
+# Start Docker Compose setup (use --playit to also start the playit.gg tunnel)
+[arg("playit", long="playit", value="true")]
+up playit="false": setup-env
     #!/usr/bin/env bash
-    if [ "{{tunnel}}" = "true" ]; then
+    if [ "{{playit}}" = "true" ]; then
         if [ -f ".playit.secret" ]; then
             echo "⚠ .playit.secret already exists. Overwrite? [y/N]"
             read -r CONFIRM
@@ -124,7 +124,7 @@ up tunnel="false": setup-env
             echo "✓ Patched player-info-forwarding-mode=${VELOCITY_FORWARDING_MODE}"
         fi
     fi
-    if [ "{{tunnel}}" = "true" ]; then
+    if [ "{{playit}}" = "true" ]; then
         PUID=$(id -u) PGID=$(id -g) docker compose --profile tunnel up -d
     else
         PUID=$(id -u) PGID=$(id -g) docker compose up -d
