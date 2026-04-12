@@ -29,6 +29,7 @@ public final class PluginConfig {
     private static final String DEFAULT_DOCKER_IMAGE = "mcsrswap-gameserver:latest";
     private static final String DEFAULT_DOCKER_NETWORK = "mcsrswap-network";
     private static final String DEFAULT_DOCKER_HOST = null;
+    private static final String DEFAULT_DOCKER_GAME_DATA_DIR = null;
 
     public final int rotationTime;
     public final double requiredPercentage;
@@ -53,12 +54,15 @@ public final class PluginConfig {
         public final String image;
         public final String network;
         public final String host;
+        /** Host-side absolute path for game server data directories (bind-mounted into game containers). */
+        public final String gameDataDir;
 
-        public Docker(boolean enabled, String image, String network, String host) {
+        public Docker(boolean enabled, String image, String network, String host, String gameDataDir) {
             this.enabled = enabled;
             this.image = image;
             this.network = network;
             this.host = host;
+            this.gameDataDir = gameDataDir;
         }
 
         @Override
@@ -71,6 +75,8 @@ public final class PluginConfig {
                     + network
                     + "', host='"
                     + host
+                    + "', gameDataDir='"
+                    + gameDataDir
                     + "'}";
         }
     }
@@ -175,7 +181,8 @@ public final class PluginConfig {
                         DEFAULT_DOCKER_ENABLED,
                         DEFAULT_DOCKER_IMAGE,
                         DEFAULT_DOCKER_NETWORK,
-                        DEFAULT_DOCKER_HOST);
+                        DEFAULT_DOCKER_HOST,
+                        DEFAULT_DOCKER_GAME_DATA_DIR);
         if (dockerMap != null) {
             boolean enabled = toBoolean(dockerMap.getOrDefault("enabled", DEFAULT_DOCKER_ENABLED));
             String image = Objects.toString(dockerMap.getOrDefault("image", DEFAULT_DOCKER_IMAGE));
@@ -185,7 +192,11 @@ public final class PluginConfig {
                     dockerMap.containsKey("host")
                             ? Objects.toString(dockerMap.get("host"))
                             : DEFAULT_DOCKER_HOST;
-            docker = new Docker(enabled, image, network, host);
+            String gameDataDir =
+                    dockerMap.containsKey("gameDataDir")
+                            ? Objects.toString(dockerMap.get("gameDataDir"))
+                            : DEFAULT_DOCKER_GAME_DATA_DIR;
+            docker = new Docker(enabled, image, network, host, gameDataDir);
         }
 
         // Environment overrides (useful when running in Docker compose)
@@ -195,23 +206,27 @@ public final class PluginConfig {
         }
         String envImage = System.getenv("MCSRSWAP_GAMESERVER_IMAGE");
         if (envImage != null && !envImage.isBlank()) {
-            docker = new Docker(docker.enabled, envImage, docker.network, docker.host);
+            docker = new Docker(docker.enabled, envImage, docker.network, docker.host, docker.gameDataDir);
         }
         String envNetwork = System.getenv("MCSRSWAP_DOCKER_NETWORK");
         if (envNetwork != null && !envNetwork.isBlank()) {
-            docker = new Docker(docker.enabled, docker.image, envNetwork, docker.host);
+            docker = new Docker(docker.enabled, docker.image, envNetwork, docker.host, docker.gameDataDir);
         }
         String envHost = System.getenv("MCSRSWAP_DOCKER_HOST");
         if (envHost == null || envHost.isBlank()) {
             envHost = System.getenv("DOCKER_HOST");
         }
         if (envHost != null && !envHost.isBlank()) {
-            docker = new Docker(docker.enabled, docker.image, docker.network, envHost);
+            docker = new Docker(docker.enabled, docker.image, docker.network, envHost, docker.gameDataDir);
         }
         String envDockerMode = System.getenv("MCSRSWAP_DOCKER_MODE");
         if (envDockerMode != null
                 && (envDockerMode.equalsIgnoreCase("true") || envDockerMode.equals("1"))) {
-            docker = new Docker(true, docker.image, docker.network, docker.host);
+            docker = new Docker(true, docker.image, docker.network, docker.host, docker.gameDataDir);
+        }
+        String envGameDataDir = System.getenv("GAME_DATA_DIR");
+        if (envGameDataDir != null && !envGameDataDir.isBlank()) {
+            docker = new Docker(docker.enabled, docker.image, docker.network, docker.host, envGameDataDir);
         }
         String envWorldSeeds = System.getenv("MCSRSWAP_WORLD_SEEDS");
         if (envWorldSeeds != null && !envWorldSeeds.isBlank()) {

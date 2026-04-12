@@ -11,7 +11,7 @@ services:
     volumes:
       - ./data/velocity:/data
       # Game-server data directories are created here by the plugin and bind-mounted into game containers.
-      - ${GAME_DATA_DIR:-./data/game}:/managed-data
+      - ${GAME_DATA_DIR:-./data}:/managed-data
     environment:
       MCSRSWAP_DOCKER_MODE: "true"
       PUID: ${PUID:-1000}

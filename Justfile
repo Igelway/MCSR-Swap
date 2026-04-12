@@ -2,7 +2,7 @@ set dotenv-load
 
 # Absolute path to the game-server data root on the HOST.
 # Override via GAME_DATA_DIR in .env or environment to use a custom location.
-game_data_dir := env("GAME_DATA_DIR", justfile_directory() / "data" / "game")
+game_data_dir := env("GAME_DATA_DIR", justfile_directory() / "data")
 
 # Default recipe: show available commands
 default:
@@ -110,7 +110,7 @@ up tunnel="false": setup-env
         echo "Error: PLAYIT_SECRET not set in .env. Add your playit.gg agent key (see .env.example)." >&2
         exit 1
     fi
-    mkdir -p data/{velocity,lobby} "{{game_data_dir}}"
+    mkdir -p data/{velocity,lobby}
     # Ensure forwarding-secret-file points to the Docker secret mount path
     if [ -f "data/velocity/velocity.toml" ]; then
         sed -i 's|^forwarding-secret-file = .*|forwarding-secret-file = "/run/secrets/forwarding_secret"|' data/velocity/velocity.toml

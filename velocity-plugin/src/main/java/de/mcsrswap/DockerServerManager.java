@@ -5,6 +5,7 @@ import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
+import java.util.Objects;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
@@ -112,14 +113,16 @@ public class DockerServerManager {
             return;
         }
 
-        // Determine host-side game data path from GAME_DATA_DIR env var.
-        String gameDirEnv = System.getenv("GAME_DATA_DIR");
-        if (gameDirEnv == null || gameDirEnv.isEmpty()) {
-            logger.error("GAME_DATA_DIR is not set. Cannot start Docker integration without a host-side game data path.");
-            dockerEnabled = false;
-            return;
+        // Determine host-side game data path: config takes priority, then GAME_DATA_DIR env var.
+        String gameDataDirValue = dockerConfig.containsKey("gameDataDir")
+                ? Objects.toString(dockerConfig.get("gameDataDir"))
+                : System.getenv("GAME_DATA_DIR");
+        if (gameDataDirValue == null || gameDataDirValue.isEmpty()) {
+            throw new RuntimeException(
+                    "docker.gameDataDir is not set. Set it in config.yml (docker.gameDataDir)"
+                            + " or via the GAME_DATA_DIR environment variable.");
         }
-        gameDataDirHost = gameDirEnv.replaceAll("/+$", "");
+        gameDataDirHost = gameDataDirValue.replaceAll("/+$", "");
 
         logger.info("Game data dir (host): {}, (container): {}", gameDataDirHost, GAME_DATA_DIR_CONTAINER);
 
@@ -400,7 +403,10 @@ public class DockerServerManager {
                                 HostConfig.newHostConfig()
                                         .withNetworkMode(networkName)
                                         .withMemory(2147483648L)
-                                         .withBinds(new Bind(hostServerDataPath, new Volume("/data"))))
+                                         .withMounts(List.of(new Mount()
+                                                .withType(MountType.BIND)
+                                                .withSource(hostServerDataPath)
+                                                .withTarget("/data"))))
                         .exec();
 
         dockerClient.startContainerCmd(container.getId()).exec();
@@ -562,29 +568,48 @@ public class DockerServerManager {
     public void removeAllData() {
         if (!dockerEnabled) return;
 
-        logger.info("Removing all game server data directories...");
+        // Resolve server names from Docker (label query) so this works after a Velocity restart
+        // when in-memory state is gone. Fall back to tracked + configured names if query fails.
+        Set<String> serverNames = new java.util.LinkedHashSet<>();
+        try {
+            dockerClient
+                    .listContainersCmd()
+                    .withLabelFilter(List.of("mcsrswap.managed=true"))
+                    .withShowAll(true)
+                    .exec()
+                    .forEach(c -> {
+                        String serverName = c.getLabels() != null
+                                ? c.getLabels().get("mcsrswap.server")
+                                : null;
+                        if (serverName != null) serverNames.add(serverName);
+                    });
+        } catch (Exception e) {
+            logger.warn("Could not query managed containers via Docker API, falling back to known list: {}", e.getMessage());
+        }
+        serverNames.addAll(serverContainers.keySet());
+        serverNames.addAll(plugin.gameServers);
 
-        java.nio.file.Path gameDataRoot = java.nio.file.Paths.get(GAME_DATA_DIR_CONTAINER);
-        if (!java.nio.file.Files.exists(gameDataRoot)) {
-            logger.info("Game data directory does not exist, nothing to remove");
+        if (serverNames.isEmpty()) {
+            logger.info("No game servers known, nothing to remove");
             return;
         }
 
+        logger.info("Removing game server data directories for: {}", serverNames);
         int removedCount = 0;
-        try (var stream = java.nio.file.Files.list(gameDataRoot)) {
-            for (java.nio.file.Path entry : stream.toList()) {
-                if (java.nio.file.Files.isDirectory(entry)) {
-                    try {
-                        deleteDirectory(entry);
-                        logger.info("Removed game data directory: {}", entry);
-                        removedCount++;
-                    } catch (Exception e) {
-                        logger.error("Failed to remove game data directory {}: {}", entry, e.getMessage(), e);
-                    }
-                }
+        for (String serverName : serverNames) {
+            java.nio.file.Path serverDir =
+                    java.nio.file.Paths.get(GAME_DATA_DIR_CONTAINER, serverName);
+            if (!java.nio.file.Files.exists(serverDir)) {
+                logger.debug("Game data directory does not exist, skipping: {}", serverDir);
+                continue;
             }
-        } catch (Exception e) {
-            logger.error("Failed to list game data directories", e);
+            try {
+                deleteDirectory(serverDir);
+                logger.info("Removed game data directory: {}", serverDir);
+                removedCount++;
+            } catch (Exception e) {
+                logger.error("Failed to remove game data directory {}: {}", serverDir, e.getMessage(), e);
+            }
         }
 
         if (removedCount == 0) {
