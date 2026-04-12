@@ -95,32 +95,24 @@ setup-env:
         echo "→ Generated .forwarding.secret"
     fi
 
-# Set up the playit.gg agent key by entering it interactively.
-# Get your key at: https://playit.gg/account/agents/new-docker
-init-playit:
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    if [ -f ".playit.secret" ]; then
-        echo "⚠ .playit.secret already exists. Overwrite? [y/N]"
-        read -r CONFIRM
-        [ "${CONFIRM}" = "y" ] || [ "${CONFIRM}" = "Y" ] || { echo "Aborted."; exit 0; }
-    fi
-    printf "Paste your playit.gg agent key: "
-    read -r KEY
-    if [ -z "${KEY}" ]; then
-        echo "No key entered, aborting." >&2
-        exit 1
-    fi
-    printf '%s' "${KEY}" > .playit.secret
-    echo "→ Saved to .playit.secret"
-
 # Start Docker Compose setup (use --tunnel to also start the playit.gg tunnel)
 [arg("tunnel", long="tunnel", value="true")]
 up tunnel="false": setup-env
     #!/usr/bin/env bash
     if [ "{{tunnel}}" = "true" ] && [ ! -f ".playit.secret" ]; then
-        just init-playit
+        if [ -f ".playit.secret" ]; then
+            echo "⚠ .playit.secret already exists. Overwrite? [y/N]"
+            read -r CONFIRM
+            [ "${CONFIRM}" = "y" ] || [ "${CONFIRM}" = "Y" ] || { echo "Aborted."; exit 0; }
+        fi
+        printf "Paste your playit.gg agent key: "
+        read -r KEY
+        if [ -z "${KEY}" ]; then
+            echo "No key entered, aborting." >&2
+            exit 1
+        fi
+        printf '%s' "${KEY}" > .playit.secret
+        echo "→ Saved to .playit.secret"
     fi
     mkdir -p data/{velocity,lobby}
     # Ensure forwarding-secret-file points to the Docker secret mount path
