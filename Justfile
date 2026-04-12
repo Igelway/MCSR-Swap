@@ -1,3 +1,9 @@
+set dotenv-load
+
+# Absolute path to the game-server data root on the HOST.
+# Override via GAME_DATA_DIR in .env or environment to use a custom location.
+game_data_dir := env("GAME_DATA_DIR", justfile_directory() / "data")
+
 # Default recipe: show available commands
 default:
     @just --list
@@ -115,9 +121,9 @@ up tunnel="false": setup-env
         fi
     fi
     if [ "{{tunnel}}" = "true" ]; then
-        PUID=$(id -u) PGID=$(id -g) docker compose --profile tunnel up -d
+        GAME_DATA_DIR="{{game_data_dir}}" PUID=$(id -u) PGID=$(id -g) docker compose --profile tunnel up -d
     else
-        PUID=$(id -u) PGID=$(id -g) docker compose up -d
+        GAME_DATA_DIR="{{game_data_dir}}" PUID=$(id -u) PGID=$(id -g) docker compose up -d
     fi
 
 # Stop Docker Compose setup

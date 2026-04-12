@@ -10,6 +10,8 @@ services:
       - lobby
     volumes:
       - ./data/velocity:/data
+      # Game-server data directories are created here by the plugin and bind-mounted into game containers.
+      - ${GAME_DATA_DIR:-./data}:/managed-data
     environment:
       MCSRSWAP_DOCKER_MODE: "true"
       PUID: ${PUID:-1000}
@@ -20,6 +22,8 @@ services:
       MCSRSWAP_DOCKER_NETWORK: ${MCSRSWAP_DOCKER_NETWORK:-mcsrswap-network}
       # Docker host URL (uses socket proxy instead of mounting /var/run/docker.sock directly)
       MCSRSWAP_DOCKER_HOST: ${MCSRSWAP_DOCKER_HOST:-tcp://docker-proxy:2375}
+      # Host-side base path for game-server data; the plugin creates per-server subdirs here.
+      GAME_DATA_DIR: ${GAME_DATA_DIR:-}
       # Comma-separated list of admin UUIDs or usernames (optional, extends config.yml admins).
       # MCSRSWAP_ADMINS: ${MCSRSWAP_ADMINS:-}
     secrets:

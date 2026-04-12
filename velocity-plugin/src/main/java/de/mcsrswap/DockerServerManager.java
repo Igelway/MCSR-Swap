@@ -5,6 +5,7 @@ import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
+import java.util.Objects;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
@@ -27,10 +28,10 @@ public class DockerServerManager {
     private boolean dockerEnabled = false;
     private String gameServerImage = "mcsrswap-gameserver:latest";
     private String networkName = "mcsrswap-network";
-    // Host-side data path root. This is derived from the MCSRSWAP_HOST_ROOT environment variable
-    // and always points to <HOST_ROOT>/data. When running against the host Docker socket this
-    // environment variable MUST be provided to avoid writing into container-local paths.
-    private String dataPath;
+    // Host-side path to the game-data root (passed to the Docker API for bind mounts).
+    private String gameDataDirHost;
+    // Container-side mount of the same directory (used by the plugin to create sub-dirs).
+    private static final String GAME_DATA_DIR_CONTAINER = "/managed-data";
 
     private final Map<String, String> serverContainers = new ConcurrentHashMap<>();
 
@@ -112,140 +113,22 @@ public class DockerServerManager {
             return;
         }
 
-        // Determine host-side data path. Try env MCSRSWAP_HOST_ROOT first; if not set try to derive
-        // from the container's bind mount for /data by inspecting this container via Docker API.
-        String hostRootEnv = System.getenv("MCSRSWAP_HOST_ROOT");
-        if (hostRootEnv != null && !hostRootEnv.isEmpty()) {
-            if (hostRootEnv.endsWith("/"))
-                hostRootEnv = hostRootEnv.substring(0, hostRootEnv.length() - 1);
-            this.dataPath = hostRootEnv + "/data";
-        } else {
-            try {
-                // Find current container id from /proc/self/cgroup or hostname fallback
-                String containerId = null;
-                java.io.File cgroup = new java.io.File("/proc/self/cgroup");
-                if (cgroup.exists()) {
-                    try (java.io.BufferedReader br =
-                            new java.io.BufferedReader(new java.io.FileReader(cgroup))) {
-                        String line;
-                        while ((line = br.readLine()) != null) {
-                            int idx = line.lastIndexOf('/');
-                            if (idx != -1) {
-                                String candidate = line.substring(idx + 1);
-                                if (candidate.length() >= 12) {
-                                    containerId = candidate;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                if (containerId == null) {
-                    try {
-                        containerId = java.net.InetAddress.getLocalHost().getHostName();
-                    } catch (Exception ignore) {
-                    }
-                }
-
-                if (containerId == null)
-                    throw new IllegalStateException(
-                            "Cannot determine current container id to derive host path");
-
-                var inspect = dockerClient.inspectContainerCmd(containerId).exec();
-                var mounts = inspect.getMounts();
-                String hostDataMount = null;
-                if (mounts != null) {
-                    for (Object m : mounts) {
-                        // Debug: print mount information to help diagnose host mount issues
-                        try {
-                            String src = null;
-                            String dest = null;
-                            try {
-                                java.lang.reflect.Method getSource =
-                                        m.getClass().getMethod("getSource");
-                                Object s = getSource.invoke(m);
-                                if (s != null) src = s.toString();
-                            } catch (Exception __e) {
-                                // ignore
-                            }
-                            try {
-                                java.lang.reflect.Method getDestination =
-                                        m.getClass().getMethod("getDestination");
-                                Object d = getDestination.invoke(m);
-                                if (d != null) dest = d.toString();
-                            } catch (Exception __e) {
-                                // ignore
-                            }
-
-                            if (src != null || dest != null) {
-                                logger.info("Found mount: source='{}' destination='{}'", src, dest);
-                            } else {
-                                logger.debug("Mount info: {}", m.toString());
-                            }
-
-                            if ("/data".equals(dest)) {
-                                hostDataMount = src;
-                                break;
-                            }
-                        } catch (Throwable __t) {
-                            logger.debug("Mount info: {}", m.toString());
-                        }
-                    }
-                }
-                if (hostDataMount == null || hostDataMount.isEmpty()) {
-                    // Fallback to a relative './data' path when host mount cannot be determined.
-                    logger.warn(
-                            "Could not find host mount for /data in this container; falling back to"
-                                + " './data' relative path");
-                    this.dataPath = "./data";
-                } else {
-                    java.nio.file.Path hostMountPath =
-                            java.nio.file.Paths.get(hostDataMount).toAbsolutePath().normalize();
-                    // If the mount source points to a subfolder like ".../data/velocity",
-                    // prefer the parent (the actual host ./data) as the data root. If the
-                    // mount already points to the host data folder, use it directly.
-                    String fileName =
-                            hostMountPath.getFileName() != null
-                                    ? hostMountPath.getFileName().toString()
-                                    : "";
-                    if ("velocity".equals(fileName)) {
-                        java.nio.file.Path hostRoot = hostMountPath.getParent();
-                        if (hostRoot != null) {
-                            this.dataPath = hostRoot.toString();
-                        } else {
-                            logger.warn(
-                                    "Invalid host mount path for /data: {}. Falling back to"
-                                        + " './data'",
-                                    hostDataMount);
-                            this.dataPath = "./data";
-                        }
-                    } else if ("data".equals(fileName)) {
-                        // mount already points to the host data folder
-                        this.dataPath = hostMountPath.toString();
-                    } else {
-                        // otherwise assume the host root is parent and append 'data'
-                        java.nio.file.Path hostRoot = hostMountPath.getParent();
-                        if (hostRoot != null) {
-                            this.dataPath = hostRoot.resolve("data").toString();
-                        } else {
-                            logger.warn(
-                                    "Unexpected host mount path for /data: {}. Falling back to"
-                                        + " './data'",
-                                    hostDataMount);
-                            this.dataPath = "./data";
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                logger.warn(
-                        "Failed to derive host data path from container mount: {}. Falling back to"
-                            + " './data'",
-                        e.getMessage());
-                this.dataPath = "./data";
-            }
+        // Determine host-side game data path: config takes priority, then GAME_DATA_DIR env var.
+        String gameDataDirValue = dockerConfig.containsKey("gameDataDir")
+                ? Objects.toString(dockerConfig.get("gameDataDir"))
+                : System.getenv("GAME_DATA_DIR");
+        if (gameDataDirValue == null || gameDataDirValue.isEmpty()) {
+            throw new RuntimeException(
+                    "docker.gameDataDir is not set. Set it in config.yml (docker.gameDataDir)"
+                            + " or via the GAME_DATA_DIR environment variable.");
         }
+        if (!gameDataDirValue.startsWith("/")) {
+            throw new RuntimeException(
+                    "docker.gameDataDir must be an absolute path, got: \"" + gameDataDirValue + "\"");
+        }
+        gameDataDirHost = gameDataDirValue.replaceAll("/+$", "");
 
-        logger.info("Using data path: {}", this.dataPath);
+        logger.info("Game data dir (host): {}, (container): {}", gameDataDirHost, GAME_DATA_DIR_CONTAINER);
 
         logger.info(
                 "Docker integration enabled: image={}, network={}", gameServerImage, networkName);
@@ -379,8 +262,18 @@ public class DockerServerManager {
 
     private String createGameServer(String serverName, long seed) {
         String containerName = "mcsrswap-" + serverName;
-        String volumeNameForServer = "mcsrswap-" + serverName;
         String seedStr = String.valueOf(seed);
+
+        // Ensure the per-server data directory exists on the host (via the container-side mount).
+        java.nio.file.Path serverDataContainer =
+                java.nio.file.Paths.get(GAME_DATA_DIR_CONTAINER, serverName);
+        try {
+            java.nio.file.Files.createDirectories(serverDataContainer);
+            logger.info("Created game data directory: {}", serverDataContainer);
+        } catch (Exception e) {
+            logger.warn("Could not create game data directory {}: {}", serverDataContainer, e.getMessage());
+        }
+        String hostServerDataPath = gameDataDirHost + "/" + serverName;
 
         // Check if container already exists
         try {
@@ -514,7 +407,10 @@ public class DockerServerManager {
                                 HostConfig.newHostConfig()
                                         .withNetworkMode(networkName)
                                         .withMemory(2147483648L)
-                                        .withBinds(new Bind(volumeNameForServer, new Volume("/data"))))
+                                         .withMounts(List.of(new Mount()
+                                                .withType(MountType.BIND)
+                                                .withSource(hostServerDataPath)
+                                                .withTarget("/data"))))
                         .exec();
 
         dockerClient.startContainerCmd(container.getId()).exec();
@@ -676,47 +572,67 @@ public class DockerServerManager {
     public void removeAllData() {
         if (!dockerEnabled) return;
 
-        logger.info("Removing all game server volumes...");
-
-        // List all Docker volumes and find ones matching our pattern
+        // Resolve server names from Docker (label query) so this works after a Velocity restart
+        // when in-memory state is gone. Fall back to tracked + configured names if query fails.
+        Set<String> serverNames = new java.util.LinkedHashSet<>();
         try {
-            var volumesResponse = dockerClient.listVolumesCmd().exec();
-            var volumes = volumesResponse.getVolumes();
-
-            if (volumes == null) {
-                logger.warn("No volumes found");
-                return;
-            }
-
-            logger.info("Found {} total volumes", volumes.size());
-            int removedCount = 0;
-
-            for (var volume : volumes) {
-                String volumeName = volume.getName();
-                logger.info("Checking volume: {} (looking for prefix: mcsrswap-game)", volumeName);
-
-                if (volumeName.startsWith("mcsrswap-game")) {
-                    try {
-                        logger.info("Attempting to remove volume: {}", volumeName);
-                        dockerClient.removeVolumeCmd(volumeName).exec();
-                        logger.info("Successfully removed volume: {}", volumeName);
-                        removedCount++;
-                    } catch (Exception e) {
-                        logger.error(
-                                "Failed to remove volume {}: {}", volumeName, e.getMessage(), e);
-                    }
-                } else {
-                    logger.debug("Skipping volume {} (doesn't match prefix)", volumeName);
-                }
-            }
-
-            if (removedCount == 0) {
-                logger.info("No game server volumes found to remove");
-            } else {
-                logger.info("Removed {} game server volume(s)", removedCount);
-            }
+            dockerClient
+                    .listContainersCmd()
+                    .withLabelFilter(List.of("mcsrswap.managed=true"))
+                    .withShowAll(true)
+                    .exec()
+                    .forEach(c -> {
+                        String serverName = c.getLabels() != null
+                                ? c.getLabels().get("mcsrswap.server")
+                                : null;
+                        if (serverName != null) serverNames.add(serverName);
+                    });
         } catch (Exception e) {
-            logger.error("Failed to list volumes", e);
+            logger.warn("Could not query managed containers via Docker API, falling back to known list: {}", e.getMessage());
+        }
+        serverNames.addAll(serverContainers.keySet());
+        serverNames.addAll(plugin.gameServers);
+
+        if (serverNames.isEmpty()) {
+            logger.info("No game servers known, nothing to remove");
+            return;
+        }
+
+        logger.info("Removing game server data directories for: {}", serverNames);
+        int removedCount = 0;
+        for (String serverName : serverNames) {
+            java.nio.file.Path serverDir =
+                    java.nio.file.Paths.get(GAME_DATA_DIR_CONTAINER, serverName);
+            if (!java.nio.file.Files.exists(serverDir)) {
+                logger.debug("Game data directory does not exist, skipping: {}", serverDir);
+                continue;
+            }
+            try {
+                deleteDirectory(serverDir);
+                logger.info("Removed game data directory: {}", serverDir);
+                removedCount++;
+            } catch (Exception e) {
+                logger.error("Failed to remove game data directory {}: {}", serverDir, e.getMessage(), e);
+            }
+        }
+
+        if (removedCount == 0) {
+            logger.info("No game server data directories found to remove");
+        } else {
+            logger.info("Removed {} game server data director{}", removedCount, removedCount == 1 ? "y" : "ies");
+        }
+    }
+
+    private void deleteDirectory(java.nio.file.Path dir) throws java.io.IOException {
+        try (var stream = java.nio.file.Files.walk(dir)) {
+            stream.sorted(java.util.Comparator.reverseOrder())
+                    .forEach(p -> {
+                        try {
+                            java.nio.file.Files.delete(p);
+                        } catch (java.io.IOException e) {
+                            throw new java.io.UncheckedIOException(e);
+                        }
+                    });
         }
     }
 

@@ -270,21 +270,12 @@ public class VelocitySwapPlugin {
 
             if (enabled) {
                 dockerMode = true;
-                try {
-                    dockerManager = new DockerServerManager(server, logger, this);
-                    // pass a simple map to initialize (keeps initialize signature unchanged)
-                    Map<String, Object> dockerInit = new HashMap<>();
-                    dockerInit.put("enabled", true);
-                    dockerInit.put("image", image);
-                    dockerInit.put("network", dockerCfg.network);
-                    dockerManager.initialize(dockerInit);
-                } catch (NoClassDefFoundError e) {
-                    logger.error(
-                            "Docker mode is enabled but docker-java dependencies are not available!");
-                    logger.error(
-                            "Please ensure docker-java libraries are in the classpath when using Docker mode.");
-                    throw new RuntimeException("Docker dependencies missing", e);
-                }
+                dockerManager = new DockerServerManager(server, logger, this);
+                Map<String, Object> dockerInit = new HashMap<>();
+                dockerInit.put("enabled", true);
+                dockerInit.put("image", image);
+                dockerInit.put("network", dockerCfg.network);
+                dockerManager.initialize(dockerInit);
             }
 
             logger.info(
