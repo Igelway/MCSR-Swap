@@ -99,7 +99,7 @@ setup-env:
 [arg("tunnel", long="tunnel", value="true")]
 up tunnel="false": setup-env
     #!/usr/bin/env bash
-    if [ "{{tunnel}}" = "true" ] && [ ! -f ".playit.secret" ]; then
+    if [ "{{tunnel}}" = "true" ]; then
         if [ -f ".playit.secret" ]; then
             echo "⚠ .playit.secret already exists. Overwrite? [y/N]"
             read -r CONFIRM
