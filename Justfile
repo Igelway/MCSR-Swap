@@ -128,9 +128,9 @@ down:
 logs:
     docker compose logs -f
 
-# Attach to server console (velocity, lobby, game1, game2, etc.)
-attach service:
-    docker attach "mcsrswap-{{service}}"
+# Open an RCON console on a server (lobby, game1, game2, etc.)
+console service="lobby":
+    docker exec -it "mcsrswap-{{service}}" rcon-cli
 
 # Pull latest Docker images
 pull:
