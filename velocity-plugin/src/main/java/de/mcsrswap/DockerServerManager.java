@@ -122,6 +122,10 @@ public class DockerServerManager {
                     "docker.gameDataDir is not set. Set it in config.yml (docker.gameDataDir)"
                             + " or via the GAME_DATA_DIR environment variable.");
         }
+        if (!gameDataDirValue.startsWith("/")) {
+            throw new RuntimeException(
+                    "docker.gameDataDir must be an absolute path, got: \"" + gameDataDirValue + "\"");
+        }
         gameDataDirHost = gameDataDirValue.replaceAll("/+$", "");
 
         logger.info("Game data dir (host): {}, (container): {}", gameDataDirHost, GAME_DATA_DIR_CONTAINER);
