@@ -83,25 +83,44 @@ build-velocity:
 # Build both JARs locally
 build: build-fabric build-velocity
 
-# Generate VELOCITY_SECRET in .env if not already set.
+# Generate .forwarding.secret if not already present.
 setup-env:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    if grep -q '^VELOCITY_SECRET=' .env 2>/dev/null; then
-        echo "✓ VELOCITY_SECRET already set in .env"
+    if [ -f ".forwarding.secret" ]; then
+        echo "✓ .forwarding.secret already exists"
     else
-        SECRET=$(openssl rand -base64 12 | tr -d '+/=\n')
-        printf '\nVELOCITY_SECRET=%s\n' "$SECRET" >> .env
-        echo "→ Generated VELOCITY_SECRET and appended to .env"
+        openssl rand -base64 12 | tr -d '+/=\n' > .forwarding.secret
+        echo "→ Generated .forwarding.secret"
     fi
+
+# Set up the playit.gg agent key by entering it interactively.
+# Get your key at: https://playit.gg/account/agents/new-docker
+init-playit:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [ -f ".playit.secret" ]; then
+        echo "⚠ .playit.secret already exists. Overwrite? [y/N]"
+        read -r CONFIRM
+        [ "${CONFIRM}" = "y" ] || [ "${CONFIRM}" = "Y" ] || { echo "Aborted."; exit 0; }
+    fi
+    printf "Paste your playit.gg agent key: "
+    read -r KEY
+    if [ -z "${KEY}" ]; then
+        echo "No key entered, aborting." >&2
+        exit 1
+    fi
+    printf '%s' "${KEY}" > .playit.secret
+    echo "→ Saved to .playit.secret"
 
 # Start Docker Compose setup (use --tunnel to also start the playit.gg tunnel)
 [arg("tunnel", long="tunnel", value="true")]
 up tunnel="false": setup-env
     #!/usr/bin/env bash
-    if [ "{{tunnel}}" = "true" ] && ! grep -q '^PLAYIT_SECRET=' .env 2>/dev/null; then
-        echo "Error: PLAYIT_SECRET not set in .env. Add your playit.gg agent key (see .env.example)." >&2
+    if [ "{{tunnel}}" = "true" ] && [ ! -f ".playit.secret" ]; then
+        echo "Error: .playit.secret not found. Create it with: echo 'SECRET_KEY=<your-key>' > .playit.secret" >&2
         exit 1
     fi
     mkdir -p data/{velocity,lobby}
