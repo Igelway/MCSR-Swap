@@ -120,8 +120,7 @@ init-playit:
 up tunnel="false": setup-env
     #!/usr/bin/env bash
     if [ "{{tunnel}}" = "true" ] && [ ! -f ".playit.secret" ]; then
-        echo "Error: .playit.secret not found. Create it with: echo 'SECRET_KEY=<your-key>' > .playit.secret" >&2
-        exit 1
+        just init-playit
     fi
     mkdir -p data/{velocity,lobby}
     # Ensure forwarding-secret-file points to the Docker secret mount path

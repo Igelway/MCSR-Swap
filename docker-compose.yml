@@ -77,7 +77,7 @@ services:
       MODS_FILE: /extras/mods.txt
       REMOVE_OLD_MODS: "true"
       FABRIC_PROXY_VELOCITY: "true"
-    entrypoint: ["/bin/sh", "-c", "export FABRIC_PROXY_SECRET=$(cat /run/secrets/forwarding_secret) && exec /start"]
+    entrypoint: ["/bin/sh", "-c", "export FABRIC_PROXY_SECRET=\"$(cat /run/secrets/forwarding_secret)\" && exec /start"]
     secrets:
       - forwarding_secret
     volumes:
@@ -96,7 +96,7 @@ services:
     profiles: ["tunnel"]
     container_name: mcsrswap-playit
     network_mode: host
-    entrypoint: ["/bin/sh", "-c", "exec /playit/entrypoint.sh $(cat /run/secrets/playit_secret)"]
+    entrypoint: ["/bin/sh", "-c", "exec /playit/entrypoint.sh \"$(cat /run/secrets/playit_secret)\""]
     secrets:
       - playit_secret
     restart: unless-stopped
