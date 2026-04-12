@@ -90,7 +90,7 @@ services:
 
   # Optional tunnel service – only starts when the "tunnel" profile is active.
   # Run with: docker compose --profile tunnel up -d
-  # Requires a playit.secret file with the agent key (copy from playit.secret.example).
+  # Requires a .playit.secret file with the agent key (copy from .playit.secret.example).
   playit:
     image: ghcr.io/playit-cloud/playit-agent:latest
     profiles: ["tunnel"]
