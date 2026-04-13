@@ -13,6 +13,7 @@ if [ -f ".forwarding.secret" ]; then
     echo "✓ .forwarding.secret already exists"
 else
     openssl rand -base64 12 | tr -d '+/=\n' > .forwarding.secret
+    chmod 600 .forwarding.secret
     echo "→ Generated .forwarding.secret"
 fi
 
@@ -28,6 +29,7 @@ if [ "$PLAYIT" = "true" ]; then
             exit 1
         fi
         printf '%s' "${KEY}" > .playit.secret
+        chmod 600 .playit.secret
         echo "→ Saved to .playit.secret"
     fi
 fi
@@ -35,13 +37,3 @@ fi
 # Data directories
 mkdir -p data/{velocity,lobby}
 echo "✓ data directories ready"
-
-# Patch velocity.toml if present
-if [ -f "data/velocity/velocity.toml" ]; then
-    sed -i 's|^forwarding-secret-file = .*|forwarding-secret-file = "/run/secrets/forwarding_secret"|' data/velocity/velocity.toml
-    echo "✓ Patched forwarding-secret-file in data/velocity/velocity.toml"
-    if [ -n "${VELOCITY_FORWARDING_MODE:-}" ]; then
-        sed -i "s|^player-info-forwarding-mode = .*|player-info-forwarding-mode = \"${VELOCITY_FORWARDING_MODE}\"|" data/velocity/velocity.toml
-        echo "✓ Patched player-info-forwarding-mode=${VELOCITY_FORWARDING_MODE}"
-    fi
-fi
