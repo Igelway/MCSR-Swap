@@ -53,7 +53,7 @@ up playit="false": (setup-env playit)
 
 # Stop Docker Compose setup
 down:
-    docker compose down
+    docker compose --profile tunnel down
 
 # View logs from all containers
 logs:
