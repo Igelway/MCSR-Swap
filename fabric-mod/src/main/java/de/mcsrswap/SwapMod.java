@@ -255,20 +255,30 @@ public class SwapMod implements ModInitializer {
                                     srv.getPlayerManager().getPlayer(vehicleMountTarget);
                             ServerWorld vWorld = srv.getWorld(pendingVehicleWorldKey);
                             if (mp != null && vWorld != null) {
-                                Box box =
-                                        new Box(
-                                                pendingVehicleX - 10,
-                                                pendingVehicleY - 10,
-                                                pendingVehicleZ - 10,
-                                                pendingVehicleX + 10,
-                                                pendingVehicleY + 10,
-                                                pendingVehicleZ + 10);
                                 final UUID vUuid = pendingVehicleUuid;
-                                List<Entity> candidates =
-                                        vWorld.getEntities(
-                                                (Entity) null, box, e -> vUuid.equals(e.getUuid()));
-                                if (!candidates.isEmpty()) {
-                                    mp.startRiding(candidates.get(0), true);
+                                int vehicleChunkX = ((int) Math.floor(pendingVehicleX)) >> 4;
+                                int vehicleChunkZ = ((int) Math.floor(pendingVehicleZ)) >> 4;
+                                vWorld.getChunk(vehicleChunkX, vehicleChunkZ);
+
+                                Entity vehicle = vWorld.getEntity(vUuid);
+                                if (vehicle == null) {
+                                    Box box =
+                                            new Box(
+                                                    pendingVehicleX - 64,
+                                                    pendingVehicleY - 32,
+                                                    pendingVehicleZ - 64,
+                                                    pendingVehicleX + 64,
+                                                    pendingVehicleY + 32,
+                                                    pendingVehicleZ + 64);
+                                    List<Entity> candidates =
+                                            vWorld.getEntities(
+                                                    (Entity) null, box, e -> vUuid.equals(e.getUuid()));
+                                    if (!candidates.isEmpty()) {
+                                        vehicle = candidates.get(0);
+                                    }
+                                }
+                                if (vehicle != null) {
+                                    mp.startRiding(vehicle, true);
                                 }
                             }
                             pendingVehicleUuid = null;
