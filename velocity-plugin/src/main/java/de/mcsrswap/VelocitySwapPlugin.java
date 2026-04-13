@@ -235,15 +235,6 @@ public class VelocitySwapPlugin {
             eyeHoverTicks = cfg.eyeHoverTicks;
             worldSeeds = new ArrayList<>(cfg.worldSeeds);
 
-            logger.info(
-                    "Config loaded: rotationTime={}, eyeHoverTicks={}, saveHotbar={},"
-                            + " spectateAfterWin={}, language={}",
-                    rotationTime,
-                    eyeHoverTicks,
-                    saveHotbar,
-                    spectateAfterWin,
-                    cfg.language);
-
             // language from typed config (normalize to filename)
             String languageFile =
                     cfg.language.endsWith(".yml")
