@@ -101,18 +101,17 @@ up playit="false": setup-env
     #!/usr/bin/env bash
     if [ "{{playit}}" = "true" ]; then
         if [ -f ".playit.secret" ]; then
-            echo "⚠ .playit.secret already exists. Overwrite? [y/N]"
-            read -r CONFIRM
-            [ "${CONFIRM}" = "y" ] || [ "${CONFIRM}" = "Y" ] || { echo "Aborted."; exit 0; }
+            echo "✓ .playit.secret already exists, reusing it."
+        else
+            printf "Paste your playit.gg agent key: "
+            read -r KEY
+            if [ -z "${KEY}" ]; then
+                echo "No key entered, aborting." >&2
+                exit 1
+            fi
+            printf '%s' "${KEY}" > .playit.secret
+            echo "→ Saved to .playit.secret"
         fi
-        printf "Paste your playit.gg agent key: "
-        read -r KEY
-        if [ -z "${KEY}" ]; then
-            echo "No key entered, aborting." >&2
-            exit 1
-        fi
-        printf '%s' "${KEY}" > .playit.secret
-        echo "→ Saved to .playit.secret"
     fi
     mkdir -p data/{velocity,lobby}
     # Ensure forwarding-secret-file points to the Docker secret mount path
