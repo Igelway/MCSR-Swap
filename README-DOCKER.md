@@ -45,7 +45,7 @@ For all other commands see the [main README](README.md#commands).
 ## Available `just` Commands
 
 - **`just up`** - Start all servers
-- **`just up --tunnel`** - Start all servers + playit.gg tunnel
+- **`just up --playit`** - Start all servers + playit.gg tunnel
 - **`just down`** - Stop all servers  
 - **`just tunnel-start`** - Start the playit.gg tunnel
 - **`just tunnel-stop`** - Stop the playit.gg tunnel
@@ -81,7 +81,7 @@ Configuration files are automatically created on first startup:
    ```
 3. Start everything including the tunnel:
    ```bash
-   just up --tunnel
+   just up --playit
    ```
 4. Share the provided `something.mc.gg` address with your friends
 

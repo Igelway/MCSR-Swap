@@ -9,8 +9,7 @@ ENV TYPE=FABRIC \
     EULA=TRUE \
     ONLINE_MODE=FALSE \
     DIFFICULTY=easy \
-    SPAWN_PROTECTION=0 \
-    ENABLE_COMMAND_BLOCK=TRUE
+    SPAWN_PROTECTION=0
 
 # Install curl for downloading mods
 USER root
@@ -22,8 +21,8 @@ RUN apt-get update && \
 RUN if getent group minecraft >/dev/null 2>&1; then groupmod -g ${PGID} minecraft || true; else groupadd -g ${PGID} minecraft || true; fi && \
     if id -u minecraft >/dev/null 2>&1; then usermod -u ${PUID} -g ${PGID} minecraft || true; else useradd -u ${PUID} -g ${PGID} -m -s /bin/sh minecraft || true; fi || true
 
-# Create directories
-RUN mkdir -p /opt/app-files/mods /opt/config-template && chown -R minecraft:minecraft /opt/app-files /opt/config-template || true
+# Create mods directory
+RUN mkdir -p /opt/app-files/mods && chown -R minecraft:minecraft /opt/app-files || true
 
 # Copy and run mod download script
 COPY docker/download-mods.sh /tmp/download-mods.sh
@@ -31,9 +30,6 @@ RUN chmod +x /tmp/download-mods.sh && /tmp/download-mods.sh /opt/app-files/mods
 
 # Copy our mod
 COPY fabric-mod/build/libs/mcsrswap-fabric-mod-*.jar /opt/app-files/mods/
-
-# Copy config template
-COPY docker/defaults/gameserver/ /opt/config-template/
 
 # Copy entrypoint script
 COPY docker/gameserver-entrypoint.sh /gameserver-entrypoint.sh

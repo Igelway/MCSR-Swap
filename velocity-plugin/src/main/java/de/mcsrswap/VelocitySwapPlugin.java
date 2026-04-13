@@ -128,15 +128,21 @@ public class VelocitySwapPlugin {
                                             logger.error("Error during shutdown cleanup", e);
                                         }
                                     }));
-            // Pull latest image in background during startup
-            java.util.concurrent.CompletableFuture.runAsync(
-                    () -> {
-                        try {
-                            dockerManager.pullImage();
-                        } catch (Exception e) {
-                            logger.warn("Background image pull failed: {}", e.getMessage());
-                        }
-                    });
+            // Pull latest image in background during startup (skip if MCSRSWAP_PULL_GAME_IMAGE=false)
+            String pullEnv = System.getenv("MCSRSWAP_PULL_GAME_IMAGE");
+            boolean pullImage = pullEnv == null || (!pullEnv.equalsIgnoreCase("false") && !pullEnv.equals("0"));
+            if (pullImage) {
+                java.util.concurrent.CompletableFuture.runAsync(
+                        () -> {
+                            try {
+                                dockerManager.pullImage();
+                            } catch (Exception e) {
+                                logger.warn("Background image pull failed: {}", e.getMessage());
+                            }
+                        });
+            } else {
+                logger.info("Image pull skipped (MCSRSWAP_PULL_GAME_IMAGE=false).");
+            }
         }
 
         server.getChannelRegistrar().register(CHANNEL);
