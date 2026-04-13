@@ -63,8 +63,7 @@ Configuration files are automatically created on first startup:
 
 ## Troubleshooting
 
-- Check logs: `just logs`
-- Reset everything: `just clean`
+- Check logs: `docker logs <container>`
 
 ## playit.gg Tunnel (optional)
 
