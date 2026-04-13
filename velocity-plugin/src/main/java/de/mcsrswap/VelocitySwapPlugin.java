@@ -405,8 +405,14 @@ public class VelocitySwapPlugin {
                             currentTime--;
 
                             if (currentTime <= 0) {
+                                // Show 0 on the old server to complete the visual countdown,
+                                // then trigger rotation. The new countdown is sent to the new
+                                // server via sendTimeToPlayer() in ServerConnectedEvent.
+                                currentTime = 0;
+                                broadcastTime();
                                 rotatePlayers();
                                 currentTime = rotationTime;
+                                return;
                             } else if (currentTime == 5
                                     && spectateAfterWin
                                     && !watchingPlayers.isEmpty()) {
@@ -425,10 +431,11 @@ public class VelocitySwapPlugin {
 
     private void rotatePlayers() {
 
-        // 1. Send a save signal to all current player servers
-        //    so the state is as up to date as possible (no more than 1 s old).
-        //    Skip watching players – they are spectators on a foreign server and must not
-        //    overwrite that server's saved state.
+        // 1. Send save to all current player servers immediately so the Fabric mod captures
+        //    hotbar preferences and writes an early checkpoint. The final, authoritative save
+        //    is the vanilla disconnect-save that fires when the player leaves – this early
+        //    checkpoint just ensures lastPlayerUuid / hotbar state is up to date.
+        //    Skip watching players – spectators on a foreign server must not overwrite its slot.
         byte[] saveMsg = buildMessage(out -> out.writeUTF("save"));
         for (Player player : server.getAllPlayers()) {
             if (!playerServer.containsKey(player.getUniqueId())) continue;
@@ -437,9 +444,8 @@ public class VelocitySwapPlugin {
             sendToBackend(player, saveMsg);
         }
 
-        // 2. Wait 500 ms, then perform the actual rotation.
-        // A longer wait gives the Fabric mod time to finish saving and lets the previous player's
-        // entity fully despawn before the next player arrives, avoiding brief ghost-player sightings.
+        // 2. Send connection requests 100 ms later. The short gap gives the Fabric server one
+        //    tick to process the save message before the player disconnects.
         server.getScheduler()
                 .buildTask(
                         this,
@@ -502,7 +508,7 @@ public class VelocitySwapPlugin {
 
                             logger.info("Swapping!");
                         })
-                .delay(500, TimeUnit.MILLISECONDS)
+                .delay(100, TimeUnit.MILLISECONDS)
                 .schedule();
     }
 
@@ -798,7 +804,7 @@ public class VelocitySwapPlugin {
                             sendProgressToPlayer(player);
                             sendTimeToPlayer(player);
                         })
-                .delay(500, TimeUnit.MILLISECONDS)
+                .delay(200, TimeUnit.MILLISECONDS)
                 .schedule();
     }
 
