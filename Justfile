@@ -49,7 +49,7 @@ setup-env playit="false":
 # Start Docker Compose setup (use --playit to also start the playit.gg tunnel)
 [arg("playit", long="playit", value="true")]
 up playit="false": (setup-env playit)
-    PUID=$(id -u) PGID=$(id -g) docker compose {{ if playit == "true" { "--profile tunnel" } else { "" } }} up -d
+    PUID=${PUID:-$(id -u)} PGID=${PGID:-$(id -g)} docker compose {{ if playit == "true" { "--profile tunnel" } else { "" } }} up -d
 
 # Stop Docker Compose setup
 down:
