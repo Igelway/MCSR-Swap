@@ -16,9 +16,10 @@
    Key settings in `.env`:
    - `VELOCITY_ONLINE_MODE=true` — set to `false` for LAN/offline play
    - `PUID` / `PGID` — your host user's UID/GID (`id -u` / `id -g`)
+   - `GAME_DATA_DIR` — absolute host path where game server data is stored. Defaults to `<project-dir>/data` — only set this if you want a custom location.
    - Image overrides if you built locally
 
-2. **Start the services** (generates `VELOCITY_SECRET` automatically if not set):
+2. **Start the services** (generates `.forwarding.secret` automatically if not present):
    ```bash
    just up
    ```
@@ -31,57 +32,59 @@
 
 | Command | Description |
 |---|---|
-| `/ms start` | Start the game, reusing existing containers |
-| `/ms start --clean` | Clean up old containers/volumes, then start fresh |
-| `/ms cleanup` | Stop and remove all game server containers and volumes |
+| `/ms start` | Start the game (reuses existing containers) |
+| `/ms start --clean` | Clean up old containers/data, then start fresh |
+| `/ms stop` | Stop the current game (containers keep running) |
+| `/ms cleanup` | Stop and remove all game server containers and data directories |
 | `/ms seed` | List configured world seeds |
 | `/ms seed <i> <seed>` | Set the fixed seed for slot `i` (e.g. `/ms seed 1 -123456`) |
 | `/ms seed <i> clear` | Remove the fixed seed for slot `i` (uses random) |
-| `/ms seed clear` | Clear all fixed seeds for all slots (all games use random seeds) |
+| `/ms seed clear` | Clear all fixed seeds (all games use random seeds) |
 
-In **versus mode**, seeds are mirrored between teams: setting or clearing seed slot `i` applies to the corresponding slot on both Team A and Team B. In other words, the second half of server slots reuses the first half's seeds.
+In **versus mode**, seeds are mirrored between teams: setting or clearing seed slot `i` applies to both Team A and Team B.
 For all other commands see the [main README](README.md#commands).
 
 ## Available `just` Commands
 
-- **`just up`** - Start all servers
-- **`just up --playit`** - Start all servers + playit.gg tunnel
-- **`just down`** - Stop all servers  
-- **`just attach <service>`** - Attach to server console (e.g. `just attach velocity`, `just attach lobby`, `just attach game1`)
+- **`just up`** — Start all servers
+- **`just up --playit`** — Start all servers + playit.gg tunnel
+- **`just down`** — Stop all servers (including tunnel if running)
+- **`just console velocity`** — Attach to the Velocity console (detach with Ctrl+C)
+- **`just console lobby`** — Open RCON console on the lobby server
+- **`just console game1`** — Open RCON console on a game server
+- **`just logs`** — Follow logs from all containers
+- **`just pull`** — Pull latest Docker images
 
 ## Configuration
 
 Configuration files are automatically created on first startup:
-- Velocity config: `./data/velocity/plugins/mcsrswap/config.yml`  
+- Velocity config: `./data/velocity/plugins/mcsrswap/config.yml`
 - Server configs are managed automatically
 
 ## Data Persistence
 
 - Velocity data: `./data/velocity/`
-- Lobby server: `./data/lobby/`  
-- Game servers: Docker named volumes (managed automatically)
+- Lobby server: `./data/lobby/`
+- Game servers: host directories under `GAME_DATA_DIR` (e.g. `./data/game1/`, `./data/game2/`), created automatically by the plugin
 
 ## Troubleshooting
 
-- Check logs: `docker logs <container>`
+- Check logs: `just logs` or `docker logs mcsrswap-velocity`
 
 ## playit.gg Tunnel (optional)
 
-[playit.gg](https://playit.gg) lets you expose the Velocity port to the internet without port forwarding. The Docker Compose setup includes an optional `playit` service that can be started alongside the other containers.
+[playit.gg](https://playit.gg) lets you expose the Velocity port to the internet without port forwarding.
 
 **Setup:**
 
-1. Go to [playit.gg/account/agents/new-docker](https://playit.gg/account/agents/new-docker) and create a Docker agent — copy the `SECRET_KEY` shown there
-2. Add the key to your `.env` file:
-   ```bash
-   PLAYIT_SECRET=<your key>
-   ```
-3. Start everything including the tunnel:
+1. Go to [playit.gg](https://playit.gg) → **Add Agent** → select **Docker** as the integration — copy the `SECRET_KEY` shown in the docker run / compose command
+2. Start everything including the tunnel (you will be prompted to paste the key on first run):
    ```bash
    just up --playit
    ```
-4. Share the provided `something.mc.gg` address with your friends
+3. Share the provided `something.mc.gg` address with your friends
 
+The key is saved to `.playit.secret` and reused on subsequent starts.
 The `playit` service uses `network_mode: host` so it can reach the Velocity port on `localhost:25565`.
 
 To stop only the tunnel without touching the game servers:
