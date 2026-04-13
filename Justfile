@@ -1,3 +1,9 @@
+set dotenv-load
+
+# Absolute path to the game-server data root on the HOST.
+# Override via GAME_DATA_DIR in .env or environment to use a custom location.
+game_data_dir := env("GAME_DATA_DIR", justfile_directory() / "data")
+
 # Default recipe: show available commands
 default:
     @just --list
