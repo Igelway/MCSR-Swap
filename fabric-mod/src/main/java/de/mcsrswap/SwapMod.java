@@ -79,14 +79,6 @@ public class SwapMod implements ModInitializer {
      */
     private final Set<UUID> connectedPlayers = new HashSet<>();
 
-    /**
-     * Players for whom the slot .dat has already been explicitly written by the {@code save}
-     * handler. Their subsequent disconnect save is redirected to their real UUID file instead of
-     * the slot file, so the slot .dat is never overwritten with post-ejection state (which would
-     * lack the {@code RootVehicle} tag and have stale position data).
-     */
-    public static final Set<UUID> bypassSlotRedirect = new HashSet<>();
-
     /** Counter for the 20-tick periodic save cycle. */
     private int stateSaveTick = 0;
 
@@ -250,7 +242,6 @@ public class SwapMod implements ModInitializer {
                         connectedPlayers.retainAll(online);
                         lastKnownGameMode.keySet().retainAll(online);
                         pendingSpectators.retainAll(online);
-                        bypassSlotRedirect.retainAll(online);
                         stateManager.cleanupDisconnected(online);
                         spectatorCameras.keySet().retainAll(online);
 
@@ -356,12 +347,12 @@ public class SwapMod implements ModInitializer {
                 return;
 
             case "save":
-                // Triggered by Velocity 50 ms before rotation. Force-write the slot .dat so the
-                // next player gets the freshest possible state including RootVehicle (if riding).
-                // After saving, add the player to bypassSlotRedirect so their subsequent
-                // disconnect-save goes to their personal file, not the slot – this prevents the
-                // disconnect (which fires after stopRiding) from overwriting the slot .dat without
-                // the RootVehicle tag.
+                // Triggered by Velocity at rotation time. The player stays in their vehicle so
+                // the slot .dat is written WITH a RootVehicle tag. The subsequent disconnect-save
+                // (500 ms later) also writes RootVehicle + the final inventory, fixing the
+                // duplication bug. Vanilla then removes the vehicle entity with the player on
+                // disconnect; the next player loads the slot .dat and vanilla automatically spawns
+                // the vehicle and mounts them in it.
                 PlayerManagerInvoker pmInvoker = (PlayerManagerInvoker) server.getPlayerManager();
                 for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
                     if (p.interactionManager.getGameMode() == GameMode.SPECTATOR) continue;
@@ -370,7 +361,6 @@ public class SwapMod implements ModInitializer {
                         stateManager.lastPlayerUuid = p.getUuid();
                     }
                     pmInvoker.invokeSavePlayerData(p);
-                    bypassSlotRedirect.add(p.getUuid());
                 }
                 return;
 
