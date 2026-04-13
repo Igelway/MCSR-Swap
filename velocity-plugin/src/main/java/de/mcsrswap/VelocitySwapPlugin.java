@@ -1042,10 +1042,11 @@ public class VelocitySwapPlugin {
                                                 "setrotation",
                                                 "spectate",
                                                 "state",
+                                                "player",
                                                 "seed"));
                             } else if (state == GameState.STARTING) {
                                 // Containers starting – almost nothing useful
-                                subs.retainAll(Arrays.asList("stop", "state", "seed"));
+                                subs.retainAll(Arrays.asList("stop", "state", "player", "seed"));
                             } else {
                                 // LOBBY – pre-game config; remove runtime-only commands
                                 subs.removeAll(Arrays.asList("forceswap", "spectate"));
