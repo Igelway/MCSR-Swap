@@ -49,7 +49,7 @@ setup-env playit="false":
 # Start Docker Compose setup (use --playit to also start the playit.gg tunnel)
 [arg("playit", long="playit", value="true")]
 up playit="false": (setup-env playit)
-    PUID=${PUID:-$(id -u)} PGID=${PGID:-$(id -g)} docker compose {{ if playit == "true" { "--profile tunnel" } else { "" } }} up -d
+    PUID=${PUID:-$(id -u)} PGID=${PGID:-$(id -g)} GAME_DATA_DIR="{{game_data_dir}}" docker compose {{ if playit == "true" { "--profile tunnel" } else { "" } }} up -d
 
 # Stop Docker Compose setup
 down:
@@ -60,8 +60,15 @@ logs:
     docker compose logs -f
 
 # Open an RCON console on a server (lobby, game1, game2, etc.)
+# For Velocity, attaches directly to the container console (detach with Ctrl+P Ctrl+Q).
 console service="lobby":
-    docker exec -it "mcsrswap-{{service}}" rcon-cli
+    #!/usr/bin/env bash
+    if [ "{{service}}" = "velocity" ]; then
+        echo "Attaching to Velocity console. Detach with Ctrl+P Ctrl+Q (Ctrl+C is safe and will NOT stop the server)."
+        docker attach --sig-proxy=false "mcsrswap-velocity"
+    else
+        docker exec -it "mcsrswap-{{service}}" rcon-cli
+    fi
 
 # Pull latest Docker images
 pull:
