@@ -47,8 +47,6 @@ For all other commands see the [main README](README.md#commands).
 - **`just up`** - Start all servers
 - **`just up --playit`** - Start all servers + playit.gg tunnel
 - **`just down`** - Stop all servers  
-- **`just tunnel-start`** - Start the playit.gg tunnel
-- **`just tunnel-stop`** - Stop the playit.gg tunnel
 - **`just attach <service>`** - Attach to server console (e.g. `just attach velocity`, `just attach lobby`, `just attach game1`)
 
 ## Configuration
