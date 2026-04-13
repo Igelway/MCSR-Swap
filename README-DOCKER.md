@@ -9,15 +9,14 @@
 
 ## Quick Start
 
-1. **Create your `.env` file** (copy the example and adjust as needed):
+1. **(Optional) Create a `.env` file** to customize settings:
    ```bash
    cp .env.example .env
    ```
-   Key settings in `.env`:
+   Common settings:
    - `VELOCITY_ONLINE_MODE=true` — set to `false` for LAN/offline play
-   - `PUID` / `PGID` — your host user's UID/GID (`id -u` / `id -g`)
-   - `GAME_DATA_DIR` — absolute host path where game server data is stored. Defaults to `<project-dir>/data` — only set this if you want a custom location.
-   - Image overrides if you built locally
+   - `MCSRSWAP_ADMINS` — comma-separated list of admin UUIDs or usernames
+   - `MCSRSWAP_GAME_OPS`, `MCSRSWAP_GAME_DIFFICULTY`, etc. — forwarded to game containers (prefix stripped). See the [docker-minecraft-server docs](https://docker-minecraft-server.readthedocs.io/en/latest/configuration/server-properties/#other-server-property-mappings) for all available variables.
 
 2. **Start the services** (generates `.forwarding.secret` automatically if not present):
    ```bash
