@@ -22,6 +22,8 @@ if [ "$PLAYIT" = "true" ]; then
     if [ -f ".playit.secret" ]; then
         echo "✓ .playit.secret already exists, reusing it."
     else
+        echo "→ Get your key at: https://playit.gg → Add Agent → Docker"
+        echo "  Use the SECRET_KEY value from the shown docker run / compose command."
         printf "Paste your playit.gg agent key: "
         read -r KEY
         if [ -z "${KEY}" ]; then
