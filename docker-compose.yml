@@ -32,6 +32,7 @@ services:
     networks:
       - mcsrswap-network
     restart: unless-stopped
+    stdin_open: true
     labels:
       - "mcsrswap.role=proxy"
     stop_signal: SIGTERM

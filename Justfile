@@ -64,7 +64,7 @@ logs:
 console service="lobby":
     #!/usr/bin/env bash
     if [ "{{service}}" = "velocity" ]; then
-        echo "Attaching to Velocity console. Detach with Ctrl+P Ctrl+Q (Ctrl+C is safe and will NOT stop the server)."
+        echo "Attaching to Velocity console. Detach with Ctrl+C (will NOT stop the server)."
         docker attach --sig-proxy=false "mcsrswap-velocity"
     else
         docker exec -it "mcsrswap-{{service}}" rcon-cli
