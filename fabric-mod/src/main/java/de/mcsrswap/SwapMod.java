@@ -10,7 +10,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -21,20 +20,15 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.network.ServerSidePacketRegistry;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.entity.Entity;
 import net.minecraft.network.Packet;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.packet.s2c.play.SetCameraEntityS2CPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.LiteralText;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.registry.RegistryKey;
 import net.minecraft.world.GameMode;
 import net.minecraft.world.GameRules;
-import net.minecraft.world.World;
 
 public class SwapMod implements ModInitializer {
 
@@ -84,22 +78,6 @@ public class SwapMod implements ModInitializer {
      * respawns – we only act on the actual first join.
      */
     private final Set<UUID> connectedPlayers = new HashSet<>();
-
-    /**
-     * UUID of the vehicle entity that the previous player was riding when {@code save} fired. The
-     * player is ejected from the vehicle before the slot .dat is written so the slot file never
-     * contains a {@code RootVehicle} tag (which would otherwise spawn a duplicate entity). The
-     * vehicle stays in the world; the next player is explicitly mounted into it on load.
-     */
-    private UUID pendingVehicleUuid = null;
-
-    private RegistryKey<World> pendingVehicleWorldKey = null;
-    private double pendingVehicleX, pendingVehicleY, pendingVehicleZ;
-
-    /** UUID of the player waiting to be mounted, and ticks remaining until mount is attempted. */
-    private UUID vehicleMountTarget = null;
-
-    private int vehicleMountTicks = 0;
 
     /** Counter for the 20-tick periodic save cycle. */
     private int stateSaveTick = 0;
@@ -230,12 +208,6 @@ public class SwapMod implements ModInitializer {
                     // Disable join invincibility.
                     player.timeUntilRegen = 0;
                     stateManager.clearRegenAfter.put(player.getUuid(), 20);
-
-                    // If a vehicle was ejected during save, schedule mounting this player in it.
-                    if (pendingVehicleUuid != null) {
-                        vehicleMountTarget = player.getUuid();
-                        vehicleMountTicks = 3;
-                    }
                 });
 
         // Tick handler: clearRegen, mode detection, periodic save, disconnect cleanup, camera locks
@@ -244,48 +216,6 @@ public class SwapMod implements ModInitializer {
                     if (frozen) return;
 
                     stateManager.tickClearRegen(srv);
-
-                    // Mount pending vehicle after a short delay so the world entity is settled.
-                    if (vehicleMountTicks > 0) {
-                        vehicleMountTicks--;
-                        if (vehicleMountTicks == 0
-                                && pendingVehicleUuid != null
-                                && vehicleMountTarget != null) {
-                            ServerPlayerEntity mp =
-                                    srv.getPlayerManager().getPlayer(vehicleMountTarget);
-                            ServerWorld vWorld = srv.getWorld(pendingVehicleWorldKey);
-                            if (mp != null && vWorld != null) {
-                                final UUID vUuid = pendingVehicleUuid;
-                                int vehicleChunkX = ((int) Math.floor(pendingVehicleX)) >> 4;
-                                int vehicleChunkZ = ((int) Math.floor(pendingVehicleZ)) >> 4;
-                                vWorld.getChunk(vehicleChunkX, vehicleChunkZ);
-
-                                Entity vehicle = vWorld.getEntity(vUuid);
-                                if (vehicle == null) {
-                                    Box box =
-                                            new Box(
-                                                    pendingVehicleX - 64,
-                                                    pendingVehicleY - 32,
-                                                    pendingVehicleZ - 64,
-                                                    pendingVehicleX + 64,
-                                                    pendingVehicleY + 32,
-                                                    pendingVehicleZ + 64);
-                                    List<Entity> candidates =
-                                            vWorld.getEntities(
-                                                    (Entity) null, box, e -> vUuid.equals(e.getUuid()));
-                                    if (!candidates.isEmpty()) {
-                                        vehicle = candidates.get(0);
-                                    }
-                                }
-                                if (vehicle != null) {
-                                    mp.startRiding(vehicle, true);
-                                }
-                            }
-                            pendingVehicleUuid = null;
-                            pendingVehicleWorldKey = null;
-                            vehicleMountTarget = null;
-                        }
-                    }
 
                     stateSaveTick++;
                     if (stateSaveTick >= 20) {
@@ -417,25 +347,15 @@ public class SwapMod implements ModInitializer {
                 return;
 
             case "save":
-                // Triggered by Velocity at rotation time. Eject the player from any vehicle first
-                // so the slot .dat is written WITHOUT a RootVehicle tag – preventing a duplicate
-                // entity spawning when the next player loads. The vehicle stays in the world; the
-                // next player is mounted explicitly via pendingVehicleUuid on ENTITY_LOAD.
-                // bypassSlotRedirect is intentionally NOT used: the subsequent disconnect-save also
-                // goes to slot .dat, capturing the final inventory and fixing inventory duplication
-                // when items are placed in the last 500 ms of a rotation.
+                // Triggered by Velocity at rotation time. The player stays in their vehicle so
+                // the slot .dat is written WITH a RootVehicle tag. The subsequent disconnect-save
+                // (500 ms later) also writes RootVehicle + the final inventory, fixing the
+                // duplication bug. Vanilla then removes the vehicle entity with the player on
+                // disconnect; the next player loads the slot .dat and vanilla automatically spawns
+                // the vehicle and mounts them in it.
                 PlayerManagerInvoker pmInvoker = (PlayerManagerInvoker) server.getPlayerManager();
                 for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
                     if (p.interactionManager.getGameMode() == GameMode.SPECTATOR) continue;
-                    Entity rootVehicle = p.getRootVehicle();
-                    if (rootVehicle != null && rootVehicle != (Entity) p) {
-                        pendingVehicleUuid = rootVehicle.getUuid();
-                        pendingVehicleWorldKey = rootVehicle.getEntityWorld().getRegistryKey();
-                        pendingVehicleX = rootVehicle.getX();
-                        pendingVehicleY = rootVehicle.getY();
-                        pendingVehicleZ = rootVehicle.getZ();
-                        p.stopRiding();
-                    }
                     if (p.getHealth() > 0.0f) {
                         if (stateManager.saveHotbar) stateManager.captureHotbarPreference(p);
                         stateManager.lastPlayerUuid = p.getUuid();
@@ -487,10 +407,6 @@ public class SwapMod implements ModInitializer {
 
     private void resetWorldState() {
         finished = false;
-        pendingVehicleUuid = null;
-        pendingVehicleWorldKey = null;
-        vehicleMountTarget = null;
-        vehicleMountTicks = 0;
         server.getPlayerManager()
                 .getPlayerList()
                 .forEach(p -> p.sendMessage(new LiteralText(Lang.newRound(p.getUuid())), false));
