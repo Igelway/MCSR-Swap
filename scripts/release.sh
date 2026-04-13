@@ -10,8 +10,6 @@ if [ -z "$VERSION" ]; then
     VERSION=$(echo "$CURRENT" | sed 's/^v//' | awk -F. '{print $1"."$2"."$3+1}')
     echo "→ Auto-incrementing from $CURRENT to v$VERSION" >&2
 else
-    # Strip leading 'v' if provided (e.g. v1.0.4 → 1.0.4)
-    VERSION="${VERSION#v}"
     if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-].+)?$ ]]; then
         echo "Error: version must be in format X.Y.Z or X.Y.Z-suffix (got: $VERSION)" >&2
         exit 1
