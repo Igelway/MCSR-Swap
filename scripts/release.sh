@@ -10,6 +10,12 @@ if [ -z "$VERSION" ]; then
     VERSION=$(echo "$CURRENT" | sed 's/^v//' | awk -F. '{print $1"."$2"."$3+1}')
     echo "→ Auto-incrementing from $CURRENT to v$VERSION" >&2
 else
+    # Strip leading 'v' if provided (e.g. v1.0.4 → 1.0.4)
+    VERSION="${VERSION#v}"
+    if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-].+)?$ ]]; then
+        echo "Error: version must be in format X.Y.Z or X.Y.Z-suffix (got: $VERSION)" >&2
+        exit 1
+    fi
     echo "→ Setting version to v$VERSION" >&2
 fi
 
@@ -32,8 +38,8 @@ echo "→ Updating velocity-plugin/src/main/resources/velocity-plugin.json..." >
 sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" velocity-plugin/src/main/resources/velocity-plugin.json
 
 echo "→ Updating README.md..." >&2
-sed -i "s/mcsrswap-fabric-mod-[0-9.]*\.jar/mcsrswap-fabric-mod-$VERSION.jar/g" README.md
-sed -i "s/mcsrswap-velocity-plugin-[0-9.]*\.jar/mcsrswap-velocity-plugin-$VERSION.jar/g" README.md
+sed -i "s/mcsrswap-fabric-mod-v[0-9.]*\.jar/mcsrswap-fabric-mod-v$VERSION.jar/g" README.md
+sed -i "s/mcsrswap-velocity-plugin-v[0-9.]*\.jar/mcsrswap-velocity-plugin-v$VERSION.jar/g" README.md
 
 echo "→ Committing and tagging..." >&2
 git add pom.xml velocity-plugin/pom.xml fabric-mod/build.gradle \
