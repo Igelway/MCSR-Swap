@@ -1,12 +1,6 @@
 #!/bin/bash
 set -e
 
-# Copy config template files (only if they don't exist)
-echo "Setting up configuration..."
-if [ -d "/opt/config-template" ]; then
-  cp -rn /opt/config-template/* /data/ 2>/dev/null || true
-fi
-
 # Create symlinks for mods
 echo "Setting up mod symlinks..."
 
