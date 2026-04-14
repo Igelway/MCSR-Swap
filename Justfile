@@ -49,7 +49,15 @@ setup-env playit="false":
 # Start Docker Compose setup (use --playit to also start the playit.gg tunnel)
 [arg("playit", long="playit", value="true")]
 up playit="false": (setup-env playit)
-    PUID=${PUID:-$(id -u)} PGID=${PGID:-$(id -g)} GAME_DATA_DIR="{{game_data_dir}}" docker compose {{ if playit == "true" { "--profile tunnel" } else { "" } }} up -d
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -f .env ]; then
+        set -a
+        source .env
+        set +a
+    fi
+    EULA_VALUE="${MINECRAFT_SERVER_EULA:-}"
+    PUID=${PUID:-$(id -u)} PGID=${PGID:-$(id -g)} GAME_DATA_DIR="{{game_data_dir}}" MINECRAFT_SERVER_EULA="${EULA_VALUE}" docker compose {{ if playit == "true" { "--profile tunnel" } else { "" } }} up -d
 
 # Stop Docker Compose setup
 down:

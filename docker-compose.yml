@@ -16,6 +16,7 @@ services:
       MCSRSWAP_DOCKER_MODE: "true"
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
+      MINECRAFT_SERVER_EULA: ${MINECRAFT_SERVER_EULA:-}
       MCSRSWAP_GAMESERVER_IMAGE: ${MCSRSWAP_GAMESERVER_IMAGE:-ghcr.io/igelway/mcsr-swap-gameserver:latest}
       MCSRSWAP_LOBBY_ADDRESS: ${MCSRSWAP_LOBBY_ADDRESS:-lobby}
       # Docker network name for spawned game servers
@@ -69,7 +70,7 @@ services:
     expose:
       - "25565"
     environment:
-      EULA: "TRUE"
+      EULA: ${MINECRAFT_SERVER_EULA:-false}
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
       TYPE: FABRIC
