@@ -15,8 +15,8 @@ if [ -f ".env" ]; then
     set +a
 fi
 
-case "${MINECRAFT_SERVER_EULA:-}" in
-    [Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|[Oo][Nn]|1)
+case "${MINECRAFT_SERVER_EULA,,}" in
+    true|yes|on|1)
         echo "✓ Minecraft EULA already accepted"
         ;;
     *)
