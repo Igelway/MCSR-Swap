@@ -150,6 +150,18 @@ public class DockerServerManager {
         return null;
     }
 
+    private String getMinecraftServerEulaValue() {
+        return System.getenv().getOrDefault("MINECRAFT_SERVER_EULA", "false");
+    }
+
+    private boolean isMinecraftServerEulaAccepted(String value) {
+        value = value.trim().toLowerCase(Locale.ROOT);
+        return value.equals("true")
+                || value.equals("yes")
+                || value.equals("on")
+                || value.equals("1");
+    }
+
     public boolean isDockerEnabled() {
         return dockerEnabled;
     }
@@ -381,10 +393,18 @@ public class DockerServerManager {
                     e.getMessage());
         }
 
+        String eulaValue = getMinecraftServerEulaValue();
+        boolean eulaAccepted = isMinecraftServerEulaAccepted(eulaValue);
+        if (!eulaAccepted) {
+            logger.warn(
+                    "Minecraft EULA not accepted. Set MINECRAFT_SERVER_EULA to true, yes, on,"
+                            + " or 1 before starting Docker mode.");
+        }
+
         List<String> env =
                 new java.util.ArrayList<>(
                         List.of(
-                                "EULA=TRUE",
+                                "EULA=" + eulaValue,
                                 "ONLINE_MODE=FALSE",
                                 "SERVER_PORT=25565",
                                 "MEMORY=2G",

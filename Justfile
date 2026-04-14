@@ -46,10 +46,48 @@ build: build-fabric build-velocity
 setup-env playit="false":
     scripts/setup-env.sh {{ if playit == "true" { "--playit" } else { "" } }}
 
+[private]
+ensure-eula:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    EULA_VALUE="${MINECRAFT_SERVER_EULA:-}"
+    case "${EULA_VALUE,,}" in
+        true|yes|on|1)
+            exit 0
+            ;;
+    esac
+    if [ ! -t 0 ]; then
+        echo "Minecraft EULA not accepted. Set MINECRAFT_SERVER_EULA to true, yes, on, or 1 first." >&2
+        echo "See https://www.minecraft.net/eula" >&2
+        exit 1
+    fi
+    echo "Minecraft servers require accepting the Mojang EULA:"
+    echo "  https://www.minecraft.net/eula"
+    printf "Do you accept the Minecraft EULA? [y/N] "
+    read -r REPLY
+    case "${REPLY,,}" in
+        y|yes)
+            scripts/set-env-var.sh MINECRAFT_SERVER_EULA true
+            echo "-> Saved MINECRAFT_SERVER_EULA=true to .env"
+            ;;
+        *)
+            echo "EULA not accepted, aborting." >&2
+            exit 1
+            ;;
+    esac
+
 # Start Docker Compose setup (use --playit to also start the playit.gg tunnel)
 [arg("playit", long="playit", value="true")]
-up playit="false": (setup-env playit)
-    PUID=${PUID:-$(id -u)} PGID=${PGID:-$(id -g)} GAME_DATA_DIR="{{game_data_dir}}" docker compose {{ if playit == "true" { "--profile tunnel" } else { "" } }} up -d
+up playit="false": ensure-eula (setup-env playit)
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -f .env ]; then
+        set -a
+        source .env
+        set +a
+    fi
+    EULA_VALUE="${MINECRAFT_SERVER_EULA:-}"
+    PUID=${PUID:-$(id -u)} PGID=${PGID:-$(id -g)} GAME_DATA_DIR="{{game_data_dir}}" MINECRAFT_SERVER_EULA="${EULA_VALUE}" docker compose {{ if playit == "true" { "--profile tunnel" } else { "" } }} up -d
 
 # Stop Docker Compose setup
 down:
