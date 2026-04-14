@@ -82,6 +82,12 @@ public class VelocitySwapPlugin {
 
     final Set<UUID> pendingReset = new HashSet<>();
 
+    /**
+     * Players currently being routed through the lobby as part of a rotation. When they arrive at
+     * the lobby server, they are immediately forwarded to their next game server.
+     */
+    final Set<UUID> pendingRotation = new HashSet<>();
+
     /** Servers that have sent a "ready" signal after startup. */
     final Set<String> readyServers = new HashSet<>();
 
@@ -421,6 +427,7 @@ public class VelocitySwapPlugin {
 
                             broadcastTime();
                         })
+                .delay(300, TimeUnit.MILLISECONDS)
                 .repeat(1, TimeUnit.SECONDS)
                 .schedule();
     }
@@ -431,85 +438,34 @@ public class VelocitySwapPlugin {
 
     private void rotatePlayers() {
 
-        // 1. Send save to all current player servers immediately so the Fabric mod captures
-        //    hotbar preferences and writes an early checkpoint. The final, authoritative save
-        //    is the vanilla disconnect-save that fires when the player leaves – this early
-        //    checkpoint just ensures lastPlayerUuid / hotbar state is up to date.
-        //    Skip watching players – spectators on a foreign server must not overwrite its slot.
-        byte[] saveMsg = buildMessage(out -> out.writeUTF("save"));
+        // Advance each player's logical server assignment and mark them as pending rotation.
+        // They are sent to the lobby first; on arrival the ServerConnectedEvent immediately
+        // forwards them to their next game server. The vanilla disconnect-save fires when they
+        // leave the game server, so the slot .dat is always current when the next player loads.
         for (Player player : server.getAllPlayers()) {
             if (!playerServer.containsKey(player.getUniqueId())) continue;
-            if (spectators.contains(player.getUniqueId())) continue;
-            if (watchingPlayers.containsKey(player.getUniqueId())) continue;
-            sendToBackend(player, saveMsg);
+            boolean isWatcher = watchingPlayers.containsKey(player.getUniqueId());
+            if (!isWatcher && spectators.contains(player.getUniqueId())) continue;
+
+            List<String> servers = getTeamServers(player.getUniqueId());
+            String current = playerServer.get(player.getUniqueId());
+            int index = servers.indexOf(current);
+            if (index < 0) index = 0;
+            index = (index + 1) % servers.size();
+            String next = servers.get(index);
+            playerServer.put(player.getUniqueId(), next);
+
+            if (watchingPlayers.containsKey(player.getUniqueId())) {
+                watchingPlayers.remove(player.getUniqueId());
+            }
+
+            pendingRotation.add(player.getUniqueId());
+            server.getServer(lobbyServerName)
+                    .ifPresent(
+                            s -> player.createConnectionRequest(s).fireAndForget());
         }
 
-        // 2. Send connection requests 100 ms later. The short gap gives the Fabric server one
-        //    tick to process the save message before the player disconnects.
-        server.getScheduler()
-                .buildTask(
-                        this,
-                        () -> {
-                            for (Player player : server.getAllPlayers()) {
-
-                                if (!playerServer.containsKey(player.getUniqueId())) continue;
-                                boolean isWatcher =
-                                        watchingPlayers.containsKey(player.getUniqueId());
-                                if (!isWatcher && spectators.contains(player.getUniqueId()))
-                                    continue;
-
-                                List<String> servers = getTeamServers(player.getUniqueId());
-                                String current = playerServer.get(player.getUniqueId());
-                                int index = servers.indexOf(current);
-                                if (index < 0) index = 0;
-                                index = (index + 1) % servers.size();
-
-                                String next = servers.get(index);
-                                playerServer.put(player.getUniqueId(), next);
-
-                                // Edge case: watcher still present at T=0 (finished <5 s before
-                                // end, preRotation did not fire for them). Route home same as
-                                // preRotation would have done.
-                                if (watchingPlayers.containsKey(player.getUniqueId())) {
-                                    watchingPlayers.remove(player.getUniqueId());
-                                    final Player p = player;
-                                    server.getServer(next)
-                                            .ifPresent(
-                                                    s ->
-                                                            p.createConnectionRequest(s)
-                                                                    .fireAndForget());
-                                    continue;
-                                }
-
-                                // Normal player: rotate to next server, optionally as watcher if
-                                // it's finished
-                                if (spectateAfterWin
-                                        && getTeamFinished(player.getUniqueId()).contains(next)) {
-                                    String spectateServer =
-                                            findSpectateTarget(player.getUniqueId(), next);
-                                    if (spectateServer != null) {
-                                        watchingPlayers.put(player.getUniqueId(), next);
-                                        final Player p = player;
-                                        server.getServer(spectateServer)
-                                                .ifPresent(
-                                                        rs ->
-                                                                p.createConnectionRequest(rs)
-                                                                        .fireAndForget());
-                                        continue;
-                                    }
-                                }
-
-                                server.getServer(next)
-                                        .ifPresent(
-                                                s ->
-                                                        player.createConnectionRequest(s)
-                                                                .fireAndForget());
-                            }
-
-                            logger.info("Swapping!");
-                        })
-                .delay(100, TimeUnit.MILLISECONDS)
-                .schedule();
+        logger.info("Swapping!");
     }
 
     /**
@@ -725,6 +681,29 @@ public class VelocitySwapPlugin {
         Player player = event.getPlayer();
         String serverName = event.getServer().getServerInfo().getName();
 
+        // Player arrived at lobby as part of a rotation: forward immediately to their next server.
+        // playerServer was already advanced in rotatePlayers(), so we just route them there.
+        if (pendingRotation.remove(player.getUniqueId())
+                && serverName.equals(lobbyServerName)) {
+            String next = playerServer.get(player.getUniqueId());
+            if (next != null) {
+                // Optionally route as watcher if the next server is finished
+                if (spectateAfterWin && getTeamFinished(player.getUniqueId()).contains(next)) {
+                    String spectateServer = findSpectateTarget(player.getUniqueId(), next);
+                    if (spectateServer != null) {
+                        watchingPlayers.put(player.getUniqueId(), next);
+                        server.getServer(spectateServer)
+                                .ifPresent(
+                                        s -> player.createConnectionRequest(s).fireAndForget());
+                        return;
+                    }
+                }
+                server.getServer(next)
+                        .ifPresent(s -> player.createConnectionRequest(s).fireAndForget());
+            }
+            return;
+        }
+
         if (!gameServers.contains(serverName)) return;
         if (spectators.contains(player.getUniqueId())) return; // observer: no state sync
 
@@ -804,7 +783,7 @@ public class VelocitySwapPlugin {
                             sendProgressToPlayer(player);
                             sendTimeToPlayer(player);
                         })
-                .delay(200, TimeUnit.MILLISECONDS)
+                .delay(50, TimeUnit.MILLISECONDS)
                 .schedule();
     }
 

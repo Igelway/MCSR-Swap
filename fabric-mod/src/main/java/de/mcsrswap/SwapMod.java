@@ -272,6 +272,19 @@ public class SwapMod implements ModInitializer {
         if (INSTANCE != null) INSTANCE.onPlayerExitEnd(player);
     }
 
+    /**
+     * Called by DisconnectMessageMixin before vanilla's disconnect-save. Captures hotbar preference
+     * and records the last survival player UUID for mob-anger inheritance.
+     */
+    public static void onPlayerDisconnect(ServerPlayerEntity player) {
+        if (INSTANCE == null) return;
+        if (player.interactionManager.getGameMode() == GameMode.SPECTATOR) return;
+        if (player.getHealth() <= 0.0f) return;
+        StateManager sm = INSTANCE.stateManager;
+        if (sm.saveHotbar) sm.captureHotbarPreference(player);
+        sm.lastPlayerUuid = player.getUuid();
+    }
+
     private void onPlayerExitEnd(ServerPlayerEntity player) {
         if (finished) return;
         finished = true;
@@ -344,24 +357,6 @@ public class SwapMod implements ModInitializer {
             case "reset":
                 resetWorldState();
                 frozen = true;
-                return;
-
-            case "save":
-                // Triggered by Velocity at rotation time. The player stays in their vehicle so
-                // the slot .dat is written WITH a RootVehicle tag. The subsequent disconnect-save
-                // (500 ms later) also writes RootVehicle + the final inventory, fixing the
-                // duplication bug. Vanilla then removes the vehicle entity with the player on
-                // disconnect; the next player loads the slot .dat and vanilla automatically spawns
-                // the vehicle and mounts them in it.
-                PlayerManagerInvoker pmInvoker = (PlayerManagerInvoker) server.getPlayerManager();
-                for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
-                    if (p.interactionManager.getGameMode() == GameMode.SPECTATOR) continue;
-                    if (p.getHealth() > 0.0f) {
-                        if (stateManager.saveHotbar) stateManager.captureHotbarPreference(p);
-                        stateManager.lastPlayerUuid = p.getUuid();
-                    }
-                    pmInvoker.invokeSavePlayerData(p);
-                }
                 return;
 
             case "savehotbar":
