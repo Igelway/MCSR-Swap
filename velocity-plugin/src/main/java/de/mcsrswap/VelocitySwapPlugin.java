@@ -82,12 +82,6 @@ public class VelocitySwapPlugin {
 
     final Set<UUID> pendingReset = new HashSet<>();
 
-    /**
-     * Players currently being routed through the lobby as part of a rotation. When they arrive at
-     * the lobby server, they are immediately forwarded to their next game server.
-     */
-    final Set<UUID> pendingRotation = new HashSet<>();
-
     /** Servers that have sent a "ready" signal after startup. */
     final Set<String> readyServers = new HashSet<>();
 
@@ -438,10 +432,10 @@ public class VelocitySwapPlugin {
 
     private void rotatePlayers() {
 
-        // Advance each player's logical server assignment and mark them as pending rotation.
-        // They are sent to the lobby first; on arrival the ServerConnectedEvent immediately
-        // forwards them to their next game server. The vanilla disconnect-save fires when they
-        // leave the game server, so the slot .dat is always current when the next player loads.
+        // Advance each player's logical server assignment.
+        // Route to lobby first via connect() and, in the completion callback, immediately route
+        // to the next game server. The vanilla disconnect-save fires synchronously when leaving the
+        // game server, so the slot .dat is guaranteed to be current by the time the callback runs.
         for (Player player : server.getAllPlayers()) {
             if (!playerServer.containsKey(player.getUniqueId())) continue;
             boolean isWatcher = watchingPlayers.containsKey(player.getUniqueId());
@@ -459,13 +453,45 @@ public class VelocitySwapPlugin {
                 watchingPlayers.remove(player.getUniqueId());
             }
 
-            pendingRotation.add(player.getUniqueId());
+            final String nextServer = next;
             server.getServer(lobbyServerName)
                     .ifPresent(
-                            s -> player.createConnectionRequest(s).fireAndForget());
+                            lobby ->
+                                    player.createConnectionRequest(lobby)
+                                            .connect()
+                                            .thenAccept(
+                                                    result -> {
+                                                        if (!result.isSuccessful()) {
+                                                            logger.warn(
+                                                                    "Failed to route {} to lobby"
+                                                                            + " during rotation",
+                                                                    player.getUsername());
+                                                            return;
+                                                        }
+                                                        // Player arrived at lobby; slot .dat was
+                                                        // written on game-server disconnect.
+                                                        // Now forward to next game server.
+                                                        forwardFromLobby(player, nextServer);
+                                                    }));
         }
 
         logger.info("Swapping!");
+    }
+
+    private void forwardFromLobby(Player player, String nextServer) {
+        if (spectateAfterWin
+                && getTeamFinished(player.getUniqueId()).contains(nextServer)) {
+            String spectateServer =
+                    findSpectateTarget(player.getUniqueId(), nextServer);
+            if (spectateServer != null) {
+                watchingPlayers.put(player.getUniqueId(), nextServer);
+                server.getServer(spectateServer)
+                        .ifPresent(s -> player.createConnectionRequest(s).fireAndForget());
+                return;
+            }
+        }
+        server.getServer(nextServer)
+                .ifPresent(s -> player.createConnectionRequest(s).fireAndForget());
     }
 
     /**
@@ -682,28 +708,7 @@ public class VelocitySwapPlugin {
         String serverName = event.getServer().getServerInfo().getName();
 
         // Player arrived at lobby as part of a rotation: forward immediately to their next server.
-        // playerServer was already advanced in rotatePlayers(), so we just route them there.
-        if (pendingRotation.remove(player.getUniqueId())
-                && serverName.equals(lobbyServerName)) {
-            String next = playerServer.get(player.getUniqueId());
-            if (next != null) {
-                // Optionally route as watcher if the next server is finished
-                if (spectateAfterWin && getTeamFinished(player.getUniqueId()).contains(next)) {
-                    String spectateServer = findSpectateTarget(player.getUniqueId(), next);
-                    if (spectateServer != null) {
-                        watchingPlayers.put(player.getUniqueId(), next);
-                        server.getServer(spectateServer)
-                                .ifPresent(
-                                        s -> player.createConnectionRequest(s).fireAndForget());
-                        return;
-                    }
-                }
-                server.getServer(next)
-                        .ifPresent(s -> player.createConnectionRequest(s).fireAndForget());
-            }
-            return;
-        }
-
+        // This is handled via the connect() callback chain in rotatePlayers() – no action needed.
         if (!gameServers.contains(serverName)) return;
         if (spectators.contains(player.getUniqueId())) return; // observer: no state sync
 
