@@ -54,14 +54,6 @@ Recommended mods (optional but advised):
 
 ---
 
-## Network Layout
-
-![Preview](images/Velocity-layout.png)
-
-Players **only ever connect to the Velocity port**. All game server ports must be firewalled from the outside (only accessible from localhost / the machine running Velocity).
-
----
-
 ## Step 1 – Velocity setup
 
 ### 1.1 Install the plugin
