@@ -449,9 +449,7 @@ public class VelocitySwapPlugin {
             String next = servers.get(index);
             playerServer.put(uuid, next);
 
-            if (watchingPlayers.containsKey(uuid)) {
-                watchingPlayers.remove(uuid);
-            }
+            watchingPlayers.remove(uuid);
 
             final String nextServer = next;
             server.getServer(lobbyServerName)
@@ -459,7 +457,7 @@ public class VelocitySwapPlugin {
                             lobby ->
                                     player.createConnectionRequest(lobby)
                                             .connect()
-                                            .thenAccept(
+                                            .thenAcceptAsync(
                                                     result -> {
                                                         if (!result.isSuccessful()) {
                                                             logger.warn(
@@ -472,7 +470,11 @@ public class VelocitySwapPlugin {
                                                         // written on game-server disconnect.
                                                         // Now forward to next game server.
                                                         forwardFromLobby(player, nextServer);
-                                                    }));
+                                                    },
+                                                    runnable ->
+                                                            server.getScheduler()
+                                                                    .buildTask(this, runnable)
+                                                                    .schedule()));
         }
 
         logger.info("Swapping!");
@@ -495,7 +497,7 @@ public class VelocitySwapPlugin {
     }
 
     /**
-     * Called 5 seconds before rotation. Routes every watching player back to their own assigned
+     * Called 1 second before rotation. Routes every watching player back to their own assigned
      * server so they arrive as a normal survival player. This gives them a clean landing before
      * the T=0 rotation reshuffles everyone, avoids any in-air survival state that would trigger
      * an anti-cheat kick, and ensures each server has exactly one player again before the swap.
@@ -693,9 +695,6 @@ public class VelocitySwapPlugin {
             handleFinish(serverName);
         } else if (sub.equals("mode")) {
             event.setResult(PluginMessageEvent.ForwardResult.handled());
-            // Runtime mode changes are not used to decide round participation.
-            in.readUTF();
-            in.readUTF();
         }
     }
 

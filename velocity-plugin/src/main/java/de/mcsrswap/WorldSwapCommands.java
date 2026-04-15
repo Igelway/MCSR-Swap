@@ -599,15 +599,7 @@ public class WorldSwapCommands {
                                         + logicalServer
                                         + statusPart));
             }
-            src.sendMessage(Component.text("§7Active players:"));
-            for (UUID uuid : plugin.activePlayers) {
-                String name =
-                        plugin.server
-                                .getPlayer(uuid)
-                                .map(com.velocitypowered.api.proxy.Player::getUsername)
-                                .orElse(uuid.toString().substring(0, 8) + "…");
-                src.sendMessage(Component.text("§7  " + name));
-            }
+
         }
     }
 
