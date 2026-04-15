@@ -40,3 +40,5 @@ else
     fi
     printf '%s=%s\n' "$KEY" "$VALUE" >> "$ENV_FILE"
 fi
+
+echo "→ Saved ${KEY}=${VALUE} to ${ENV_FILE}"

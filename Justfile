@@ -46,7 +46,7 @@ build: build-fabric build-velocity
 setup-env playit="false":
     scripts/setup-env.sh {{ if playit == "true" { "--playit" } else { "" } }}
 
-# Start Docker Compose setup (use --playit to also start the playit.gg tunnel)
+# Start Docker Compose setup (use --playit or include playit in COMPOSE_PROFILES to also start the playit.gg tunnel)
 [arg("playit", long="playit", value="true")]
 up playit="false": (setup-env playit)
     #!/usr/bin/env bash
@@ -56,12 +56,20 @@ up playit="false": (setup-env playit)
         source .env
         set +a
     fi
+    COMPOSE_PROFILES_VALUE="${COMPOSE_PROFILES:-}"
+    if [ "{{playit}}" = "true" ]; then
+        if [ -z "${COMPOSE_PROFILES_VALUE}" ]; then
+            COMPOSE_PROFILES_VALUE="playit"
+        elif [[ ",${COMPOSE_PROFILES_VALUE}," != *",playit,"* ]]; then
+            COMPOSE_PROFILES_VALUE="${COMPOSE_PROFILES_VALUE},playit"
+        fi
+    fi
     EULA_VALUE="${MINECRAFT_SERVER_EULA:-}"
-    PUID=${PUID:-$(id -u)} PGID=${PGID:-$(id -g)} GAME_DATA_DIR="{{game_data_dir}}" MINECRAFT_SERVER_EULA="${EULA_VALUE}" docker compose {{ if playit == "true" { "--profile tunnel" } else { "" } }} up -d
+    PUID=${PUID:-$(id -u)} PGID=${PGID:-$(id -g)} GAME_DATA_DIR="{{game_data_dir}}" MINECRAFT_SERVER_EULA="${EULA_VALUE}" COMPOSE_PROFILES="${COMPOSE_PROFILES_VALUE}" docker compose up -d
 
 # Stop Docker Compose setup
 down:
-    docker compose --profile tunnel down
+    docker compose --profile playit down
 
 # View logs from all containers
 logs:

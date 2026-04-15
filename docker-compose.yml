@@ -94,12 +94,12 @@ services:
     restart: unless-stopped
     user: "minecraft:minecraft"
 
-  # Optional tunnel service – only starts when the "tunnel" profile is active.
-  # Run with: docker compose --profile tunnel up -d
+  # Optional playit.gg service – only starts when the "playit" profile is active.
+  # Run with: docker compose --profile playit up -d
   # Requires a .playit.secret file with the agent key (copy from .playit.secret.example).
   playit:
     image: ghcr.io/playit-cloud/playit-agent:latest
-    profiles: ["tunnel"]
+    profiles: ["playit"]
     container_name: mcsrswap-playit
     network_mode: host
     entrypoint: ["/bin/sh", "-c", "exec /playit/entrypoint.sh \"$(cat /run/secrets/playit_secret)\""]
