@@ -1118,6 +1118,14 @@ public class VelocitySwapPlugin {
     }
 
     private void startGameInternal() {
+        // Invariant: gameServers must be non-empty for the rotation modulo to be well-defined.
+        // detectServers() runs before every startGameInternal() call; if it produced an empty
+        // list the game cannot start.
+        if (gameServers.isEmpty()) {
+            logger.error("Cannot start game: no game servers detected. Check your config.");
+            return;
+        }
+
         List<Player> players = new ArrayList<>(getStartParticipants());
 
         activePlayers.clear();
