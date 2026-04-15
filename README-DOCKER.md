@@ -13,8 +13,10 @@
    ```bash
    cp .env.example .env
    ```
+   If `.env` does not exist, `just up` / `just setup-env` will create it from `.env.example` automatically.
    Common settings:
    - `MINECRAFT_SERVER_EULA=true` — required to start Minecraft containers; `just up` will prompt and write it to `.env` if it is missing
+   - `COMPOSE_PROFILES=playit` — always start the optional playit.gg service with `just up`
    - `VELOCITY_ONLINE_MODE=true` — set to `false` for LAN/offline play
    - `MCSRSWAP_ADMINS` — comma-separated list of admin UUIDs or usernames
    - `MCSRSWAP_GAME_OPS`, `MCSRSWAP_GAME_DIFFICULTY`, etc. — forwarded to game containers (prefix stripped). See the [docker-minecraft-server docs](https://docker-minecraft-server.readthedocs.io/en/latest/configuration/server-properties/#other-server-property-mappings) for all available variables.
@@ -48,6 +50,7 @@ For all other commands see the [main README](README.md#commands).
 
 - **`just up`** — Start all servers
 - **`just up --playit`** — Start all servers + playit.gg tunnel
+- **`COMPOSE_PROFILES=playit` in `.env`** — Make `just up` always include the playit.gg service
 - **`just down`** — Stop all servers (including tunnel if running)
 - **`just console velocity`** — Attach to the Velocity console (detach with Ctrl+C)
 - **`just console lobby`** — Open RCON console on the lobby server
@@ -82,6 +85,8 @@ Configuration files are automatically created on first startup:
    ```bash
    just up --playit
    ```
+   After saving the key, the setup asks whether `COMPOSE_PROFILES=playit` should also be written to `.env`.
+   Or set `COMPOSE_PROFILES=playit` in `.env` to make plain `just up` include the tunnel every time.
 3. Share the provided `something.mc.gg` address with your friends
 
 The key is saved to `.playit.secret` and reused on subsequent starts.
@@ -89,5 +94,5 @@ The `playit` service uses `network_mode: host` so it can reach the Velocity port
 
 To stop only the tunnel without touching the game servers:
 ```bash
-docker compose --profile tunnel stop playit
+docker compose --profile playit stop playit
 ```
