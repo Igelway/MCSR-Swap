@@ -558,12 +558,13 @@ public class WorldSwapCommands {
         }
         src.sendMessage(Component.text("§e=== Player → Server Assignment ==="));
 
-        if (plugin.playerServer.isEmpty()) {
+        if (plugin.activePlayers.isEmpty()) {
             src.sendMessage(Component.text("§7No players in game."));
         } else {
             for (Map.Entry<UUID, String> entry :
                     new java.util.TreeMap<>(plugin.playerServer).entrySet()) {
                 UUID uuid = entry.getKey();
+                if (!plugin.activePlayers.contains(uuid)) continue;
                 String logicalServer = entry.getValue();
 
                 String name =
@@ -598,11 +599,8 @@ public class WorldSwapCommands {
                                         + logicalServer
                                         + statusPart));
             }
-        }
-
-        if (!plugin.spectators.isEmpty()) {
-            src.sendMessage(Component.text("§7Permanent spectators:"));
-            for (UUID uuid : plugin.spectators) {
+            src.sendMessage(Component.text("§7Active players:"));
+            for (UUID uuid : plugin.activePlayers) {
                 String name =
                         plugin.server
                                 .getPlayer(uuid)
@@ -731,8 +729,9 @@ public class WorldSwapCommands {
         src.sendMessage(Component.text("§7Game State: §f" + plugin.gameState));
         src.sendMessage(Component.text("§7Docker Mode: §f" + plugin.dockerMode));
         src.sendMessage(Component.text("§7Game Servers: §f" + plugin.gameServers));
-        src.sendMessage(Component.text("§7Players in game: §f" + plugin.playerServer.size()));
-        src.sendMessage(Component.text("§7Spectators: §f" + plugin.spectators.size()));
+        src.sendMessage(Component.text("§7Active Players: §f" + plugin.activePlayers.size()));
+        src.sendMessage(Component.text("§7Players in game: §f" + plugin.getGameParticipants().size()));
+        src.sendMessage(Component.text("§7Watching Players: §f" + plugin.watchingPlayers.size()));
         src.sendMessage(Component.text("§7Finished Servers: §f" + plugin.finishedServers));
         src.sendMessage(Component.text("§7Current Time: §f" + plugin.currentTime + "s"));
         src.sendMessage(Component.text("§7Rotation Time: §f" + plugin.rotationTime + "s"));
