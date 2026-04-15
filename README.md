@@ -117,6 +117,10 @@ spectateTarget: next       # Which adjacent server to spectate: "next" or "prev"
 spectateMinTime: 15        # Only activate spectate if at least this many seconds remain in the rotation
 saveHotbar: true           # On player swap, rearrange the server's hotbar items to match the joining player's own preferred hotbar layout
 eyeHoverTicks: 80          # Total Eye of Ender lifetime in ticks (vanilla: 80 ≈ 2 s hover phase)
+# admins:                  # Players that bypass permission checks; accepts UUIDs or usernames
+#   - SomeUsername
+# ignorePlayers:           # Players excluded from game starts by default; accepts UUIDs or usernames
+#   - SpectatorName
 ```
 
 > **Why increase `eyeHoverTicks`?**  
@@ -213,11 +217,11 @@ All commands run through the Velocity proxy. Prefix: `/ms`
 | `/ms stop` | End the game and send everyone to the lobby |
 | `/ms forceswap` | Immediately rotate all players to the next server |
 | `/ms setrotation <seconds>` | Change the rotation interval (minimum 10 s) |
-| `/ms spectate <player>` | Toggle spectator mode for a player |
 | `/ms setteam <a\|b\|none> <player> [player2…]` | Assign players to a team (versus mode) |
 | `/ms setteamname <a\|b> <name>` | Set the display name of a team |
 | `/ms setversus <true\|false>` | Enable or disable versus mode |
 | `/ms state` | Show the current game state |
+| `/ms ignore <player>` | Toggle whether another player is excluded from game starts (lobby only) |
 
 > **Docker mode** adds `/ms start --clean` (cleanup before start) and `/ms cleanup` (remove containers + volumes). See [README-DOCKER.md](README-DOCKER.md).
 
@@ -225,7 +229,8 @@ All commands run through the Velocity proxy. Prefix: `/ms`
 
 | Command | Description |
 |---|---|
-| `/ms jointeam <a\|b>` | Join a team before the game starts |
+| `/ms jointeam <a\|b>` | Join a team before the game starts (lobby only) |
+| `/ms ignore` | Toggle whether you are excluded from the next game start (lobby only) |
 
 ### Permissions
 

@@ -145,6 +145,7 @@ public class WorldSwapCommands {
             }
         }
         src.sendMessage(Component.text("§7/ms jointeam <a|b>"));
+        src.sendMessage(Component.text("§7/ms ignore [player] §8- §7Opt out of the next game start"));
     }
 
     void cmdStart(CommandSource src, String[] args) {
@@ -496,6 +497,52 @@ public class WorldSwapCommands {
         player.sendMessage(Component.text(plugin.lang.get("team_joined", "team", dn)));
     }
 
+    void cmdIgnore(CommandSource src, String[] args) {
+        if (plugin.gameState != GameState.LOBBY) {
+            src.sendMessage(Component.text("§c/ms ignore is only available in the lobby."));
+            return;
+        }
+
+        Player target;
+        if (args.length == 0) {
+            // Self-toggle: any player can use this
+            if (!(src instanceof Player)) {
+                src.sendMessage(Component.text("§eUsage: /ms ignore <player>"));
+                return;
+            }
+            target = (Player) src;
+        } else {
+            // Target another player: admin only
+            if (!isAdmin(src)) {
+                src.sendMessage(Component.text("§cNo permission!"));
+                return;
+            }
+            String name = args[0];
+            java.util.Optional<Player> found = plugin.server.getPlayer(name);
+            if (!found.isPresent()) {
+                src.sendMessage(Component.text("§cPlayer not found: " + name));
+                return;
+            }
+            target = found.get();
+        }
+
+        UUID uuid = target.getUniqueId();
+        boolean nowIgnored = !plugin.ignoredPlayers.contains(uuid);
+        if (nowIgnored) {
+            plugin.ignoredPlayers.add(uuid);
+            target.sendMessage(Component.text("§7You are §enot§7 included in the next game start."));
+            if (src != target) {
+                src.sendMessage(Component.text("§7" + target.getUsername() + " will be §eskipped§7 at the next game start."));
+            }
+        } else {
+            plugin.ignoredPlayers.remove(uuid);
+            target.sendMessage(Component.text("§aYou are now included in the next game start."));
+            if (src != target) {
+                src.sendMessage(Component.text("§a" + target.getUsername() + " is now included in the next game start."));
+            }
+        }
+    }
+
     void cmdSetTeamName(CommandSource src, String[] args) {
         if (!isAdmin(src)) {
             src.sendMessage(Component.text("§cNo permission!"));
@@ -600,6 +647,16 @@ public class WorldSwapCommands {
                                         + statusPart));
             }
 
+        }
+
+        // Show lobby players and their ignored status
+        List<Player> lobbyPlayers = plugin.getLobbyPlayers();
+        if (!lobbyPlayers.isEmpty()) {
+            src.sendMessage(Component.text("§e=== Lobby ==="));
+            for (Player p : lobbyPlayers) {
+                String ignoredPart = plugin.isIgnored(p) ? " §c(ignored)" : "";
+                src.sendMessage(Component.text("§7" + p.getUsername() + ignoredPart));
+            }
         }
     }
 

@@ -53,6 +53,18 @@ public class VelocitySwapPlugin {
     /** Players currently participating in the active round, including temporary watchers. */
     final Set<UUID> activePlayers = new HashSet<>();
 
+    /**
+     * Players who have opted out of the next game start. Populated from config/env at load time
+     * and toggled at runtime via {@code /ms ignore}. Persists until toggled back.
+     */
+    final Set<UUID> ignoredPlayers = new HashSet<>();
+
+    /**
+     * Config-based ignore entries (names or UUID strings). Checked alongside {@code ignoredPlayers}
+     * so that offline players listed in config are also excluded.
+     */
+    final Set<String> configIgnoredPlayers = new HashSet<>();
+
     /** Versus: team assignment "a" or "b" per player (persists across game starts). */
     final Map<UUID, String> playerTeam = new HashMap<>();
 
@@ -255,6 +267,13 @@ public class VelocitySwapPlugin {
                 adminPlayers.addAll(cfg.admins);
             }
             logger.info("Loaded {} admin(s): {}", adminPlayers.size(), adminPlayers);
+
+            // Load ignored-players list from config
+            configIgnoredPlayers.clear();
+            configIgnoredPlayers.addAll(cfg.ignorePlayers);
+            if (!configIgnoredPlayers.isEmpty()) {
+                logger.info("Loaded {} ignored player(s) from config", configIgnoredPlayers.size());
+            }
 
             // Docker config: allow env overrides for image/mode
             PluginConfig.Docker dockerCfg = cfg.docker;
@@ -577,7 +596,7 @@ public class VelocitySwapPlugin {
     }
 
     /** Returns all players currently on the lobby server. */
-    private List<Player> getLobbyPlayers() {
+    List<Player> getLobbyPlayers() {
         return server.getAllPlayers().stream()
                 .filter(
                         p ->
@@ -593,7 +612,20 @@ public class VelocitySwapPlugin {
 
     /** Returns lobby players who should participate in the next game start. */
     List<Player> getStartParticipants() {
-        return getLobbyPlayers();
+        return getLobbyPlayers().stream()
+                .filter(p -> !isIgnored(p))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Returns true if a player is currently opted out of the next game start, either via a runtime
+     * {@code /ms ignore} toggle or via the {@code ignorePlayers} config entry.
+     */
+    boolean isIgnored(Player player) {
+        if (ignoredPlayers.contains(player.getUniqueId())) return true;
+        String name = player.getUsername();
+        String uuid = player.getUniqueId().toString();
+        return configIgnoredPlayers.contains(name) || configIgnoredPlayers.contains(uuid);
     }
 
     private void sendToBackend(Player player, byte[] data) {
@@ -918,7 +950,7 @@ public class VelocitySwapPlugin {
                         "player",
                         "seed",
                         "cleanup");
-        final List<String> PLAYER_SUBS = Collections.singletonList("jointeam");
+        final List<String> PLAYER_SUBS = Arrays.asList("jointeam", "ignore");
         final List<String> ALL_SUBS;
         {
             List<String> tmp = new ArrayList<>(ADMIN_SUBS);
@@ -957,6 +989,9 @@ public class VelocitySwapPlugin {
                                 break;
                             case "jointeam":
                                 commands.cmdJoinTeam(src, rest);
+                                break;
+                            case "ignore":
+                                commands.cmdIgnore(src, rest);
                                 break;
                             case "setteamname":
                                 commands.cmdSetTeamName(src, rest);
@@ -1047,6 +1082,12 @@ public class VelocitySwapPlugin {
                             case "setversus":
                                 if (args.length == 2)
                                     return filterPrefix(Arrays.asList("true", "false"), partial);
+                                break;
+
+                            case "ignore":
+                                // admins can target other players; self-toggle needs no arg
+                                if (args.length == 2 && admin)
+                                    return onlinePlayers(partial);
                                 break;
 
                             case "setrotation":

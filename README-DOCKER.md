@@ -19,6 +19,7 @@
    - `COMPOSE_PROFILES=playit` — always start the optional playit.gg service with `just up`
    - `VELOCITY_ONLINE_MODE=true` — set to `false` for LAN/offline play
    - `MCSRSWAP_ADMINS` — comma-separated list of admin UUIDs or usernames
+   - `MCSRSWAP_IGNORE_PLAYERS` — comma-separated list of UUIDs or usernames to exclude from game starts by default
    - `MCSRSWAP_GAME_OPS`, `MCSRSWAP_GAME_DIFFICULTY`, etc. — forwarded to game containers (prefix stripped). See the [docker-minecraft-server docs](https://docker-minecraft-server.readthedocs.io/en/latest/configuration/server-properties/#other-server-property-mappings) for all available variables.
 
 2. **Start the services** (generates `.forwarding.secret` automatically if not present and asks for Minecraft EULA acceptance if needed):
