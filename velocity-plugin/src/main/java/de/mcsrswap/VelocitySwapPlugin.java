@@ -588,6 +588,13 @@ public class VelocitySwapPlugin {
                 .collect(Collectors.toList());
     }
 
+    /** Returns lobby players who should participate in the next game start. */
+    List<Player> getStartParticipants() {
+        return getLobbyPlayers().stream()
+                .filter(p -> !spectators.contains(p.getUniqueId()))
+                .collect(Collectors.toList());
+    }
+
     private void sendToBackend(Player player, byte[] data) {
         player.getCurrentServer()
                 .ifPresent(conn -> conn.sendPluginMessage(CHANNEL, data));
@@ -1121,11 +1128,10 @@ public class VelocitySwapPlugin {
     }
 
     private void startGameInternal() {
-        List<Player> players = new ArrayList<>(getLobbyPlayers());
+        List<Player> players = new ArrayList<>(getStartParticipants());
 
         playerServer.clear();
         finishedServers.clear();
-        spectators.clear();
         watchingPlayers.clear();
         finishedServersA.clear();
         finishedServersB.clear();
@@ -1146,7 +1152,6 @@ public class VelocitySwapPlugin {
             logger.info("Team A servers: {}", teamAServers);
             logger.info("Team B servers: {}", teamBServers);
 
-            // Already-assigned players (only those currently connected)
             List<Player> teamAPlayers =
                     players.stream()
                             .filter(p -> "a".equals(playerTeam.get(p.getUniqueId())))
@@ -1156,76 +1161,21 @@ public class VelocitySwapPlugin {
                             .filter(p -> "b".equals(playerTeam.get(p.getUniqueId())))
                             .collect(Collectors.toList());
 
-            // Random distribution of unassigned (non-spectator) players into remaining slots.
-            // Balanced: always assign to whichever team currently has fewer players,
-            // so the final groups end up as equal as possible.
-            int slotsA = Math.max(0, teamAServers.size() - teamAPlayers.size());
-            int slotsB = Math.max(0, teamBServers.size() - teamBPlayers.size());
-            List<Player> unassigned =
-                    players.stream()
-                            .filter(
-                                    p ->
-                                            !playerTeam.containsKey(p.getUniqueId())
-                                                    && !spectators.contains(p.getUniqueId()))
-                            .collect(Collectors.toList());
-            Collections.shuffle(unassigned);
-            Set<UUID> randomlyAssigned = new HashSet<>();
-            int curA = teamAPlayers.size();
-            int curB = teamBPlayers.size();
-            for (Player p : unassigned) {
-                // Prefer the team with fewer total players; fall back to the other if full.
-                boolean preferA = (curA <= curB && slotsA > 0) || slotsB == 0;
-                if (preferA && slotsA > 0) {
-                    playerTeam.put(p.getUniqueId(), "a");
-                    randomlyAssigned.add(p.getUniqueId());
-                    curA++;
-                    slotsA--;
-                } else if (slotsB > 0) {
-                    playerTeam.put(p.getUniqueId(), "b");
-                    randomlyAssigned.add(p.getUniqueId());
-                    curB++;
-                    slotsB--;
-                } else {
-                    sendToLobby(p); // both teams full
-                }
-            }
-
-            // Re-collect after random assignments
-            List<Player> finalTeamA =
-                    players.stream()
-                            .filter(p -> "a".equals(playerTeam.get(p.getUniqueId())))
-                            .collect(Collectors.toList());
-            List<Player> finalTeamB =
-                    players.stream()
-                            .filter(p -> "b".equals(playerTeam.get(p.getUniqueId())))
-                            .collect(Collectors.toList());
-
-            assignPlayersToServers(finalTeamA, teamAServers);
-            assignPlayersToServers(finalTeamB, teamBServers);
-
-            // Players without a team assignment (spectators, etc.) stay in the lobby
-            for (Player p : players) {
-                if (!playerServer.containsKey(p.getUniqueId())) {
-                    sendToLobby(p);
-                }
-            }
+            assignPlayersToServers(teamAPlayers, teamAServers);
+            assignPlayersToServers(teamBPlayers, teamBServers);
 
             // Send team info + roster to all assigned players
             String rosterA =
-                    finalTeamA.stream().map(Player::getUsername).collect(Collectors.joining(", "));
+                    teamAPlayers.stream().map(Player::getUsername).collect(Collectors.joining(", "));
             String rosterB =
-                    finalTeamB.stream().map(Player::getUsername).collect(Collectors.joining(", "));
+                    teamBPlayers.stream().map(Player::getUsername).collect(Collectors.joining(", "));
             String rosterMsg =
                     "§7" + teamNameA + ": §f" + rosterA + " §7| " + teamNameB + ": §f" + rosterB;
             for (Player p : players) {
                 if (!playerServer.containsKey(p.getUniqueId())) continue;
                 String t = playerTeam.get(p.getUniqueId());
                 String assignedName = "a".equals(t) ? teamNameA : teamNameB;
-                String msgKey =
-                        randomlyAssigned.contains(p.getUniqueId())
-                                ? "team_assignment_random"
-                                : "team_assignment";
-                p.sendMessage(Component.text(lang.get(msgKey, "team", assignedName)));
+                p.sendMessage(Component.text(lang.get("team_assignment", "team", assignedName)));
                 p.sendMessage(Component.text(rosterMsg));
             }
         } else {

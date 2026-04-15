@@ -49,13 +49,85 @@ public class WorldSwapCommands {
         return false;
     }
 
-    /**
-     * Max players per team = gameServers.size() / 2. Returns 0 if unknown (no servers detected
-     * yet).
-     */
-    int teamCapacity() {
-        plugin.detectServers();
-        return plugin.gameServers.size() / 2;
+    private String validateStartConfiguration(List<Player> participants) {
+        if (participants.isEmpty()) {
+            return "§cNo players to start the game!";
+        }
+
+        if (!plugin.versusMode) {
+            if (!plugin.dockerMode && participants.size() > plugin.gameServers.size()) {
+                return "§cCannot start: there are more players than available game servers ("
+                        + participants.size()
+                        + "/"
+                        + plugin.gameServers.size()
+                        + ").";
+            }
+            return null;
+        }
+
+        List<Player> unassigned =
+                participants.stream()
+                        .filter(
+                                p -> {
+                                    String team = plugin.playerTeam.get(p.getUniqueId());
+                                    return !"a".equals(team) && !"b".equals(team);
+                                })
+                        .collect(Collectors.toList());
+        if (!unassigned.isEmpty()) {
+            String names =
+                    unassigned.stream().map(Player::getUsername).collect(Collectors.joining(", "));
+            return "§cCannot start versus: these players are not assigned to a team: §e" + names;
+        }
+
+        long teamACount =
+                participants.stream()
+                        .filter(p -> "a".equals(plugin.playerTeam.get(p.getUniqueId())))
+                        .count();
+        long teamBCount =
+                participants.stream()
+                        .filter(p -> "b".equals(plugin.playerTeam.get(p.getUniqueId())))
+                        .count();
+        if (teamACount != teamBCount) {
+            return "§cCannot start versus: teams are uneven ("
+                    + plugin.teamNameA
+                    + "="
+                    + teamACount
+                    + ", "
+                    + plugin.teamNameB
+                    + "="
+                    + teamBCount
+                    + ").";
+        }
+
+        if (!plugin.dockerMode) {
+            if (plugin.gameServers.size() % 2 != 0) {
+                return "§cCannot start versus: odd number of game servers ("
+                        + plugin.gameServers.size()
+                        + "). Need an even number.";
+            }
+
+            int serversPerTeam = plugin.gameServers.size() / 2;
+            if (teamACount > serversPerTeam) {
+                return "§cCannot start versus: "
+                        + plugin.teamNameA
+                        + " has "
+                        + teamACount
+                        + " players but only "
+                        + serversPerTeam
+                        + " server slots.";
+            }
+            if (teamBCount > serversPerTeam) {
+                return "§cCannot start versus: "
+                        + plugin.teamNameB
+                        + " has "
+                        + teamBCount
+                        + " players but only "
+                        + serversPerTeam
+                        + " server slots.";
+            }
+        }
+
+        return null;
     }
 
     void sendHelp(CommandSource src) {
@@ -104,13 +176,10 @@ public class WorldSwapCommands {
 
     private void cmdStartInternal(CommandSource src, String[] args) {
         if (plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
-            List<Player> participants =
-                    plugin.server.getAllPlayers().stream()
-                            .filter(p -> !plugin.spectators.contains(p.getUniqueId()))
-                            .collect(Collectors.toList());
-
-            if (participants.isEmpty()) {
-                src.sendMessage(Component.text("§cNo players to start the game!"));
+            List<Player> participants = plugin.getStartParticipants();
+            String validationError = validateStartConfiguration(participants);
+            if (validationError != null) {
+                src.sendMessage(Component.text(validationError));
                 return;
             }
 
@@ -161,6 +230,13 @@ public class WorldSwapCommands {
                             "§cNo game servers found (no server names starting with '"
                                     + plugin.gameServerPrefix
                                     + "')."));
+            return;
+        }
+
+        List<Player> participants = plugin.getStartParticipants();
+        String validationError = validateStartConfiguration(participants);
+        if (validationError != null) {
+            src.sendMessage(Component.text(validationError));
             return;
         }
 
@@ -371,30 +447,6 @@ public class WorldSwapCommands {
                                     target.sendMessage(
                                             Component.text(plugin.lang.get("team_removed")));
                                 } else {
-                                    int cap = teamCapacity();
-                                    long count =
-                                            plugin.playerTeam.values().stream()
-                                                    .filter(teamArg::equals)
-                                                    .count();
-                                    if (!teamArg.equals(plugin.playerTeam.get(uuid))
-                                            && cap > 0
-                                            && count >= cap) {
-                                        String dn =
-                                                "a".equals(teamArg)
-                                                        ? plugin.teamNameA
-                                                        : plugin.teamNameB;
-                                        src.sendMessage(
-                                                Component.text(
-                                                        plugin.lang.get(
-                                                                "team_full",
-                                                                "team",
-                                                                dn,
-                                                                "count",
-                                                                String.valueOf(cap),
-                                                                "max",
-                                                                String.valueOf(cap))));
-                                        return;
-                                    }
                                     plugin.playerTeam.put(uuid, teamArg);
                                     String dn =
                                             "a".equals(teamArg)
@@ -439,28 +491,6 @@ public class WorldSwapCommands {
             return;
         }
         Player player = (Player) src;
-        int cap = teamCapacity();
-        if (cap < 1) {
-            player.sendMessage(Component.text(plugin.lang.get("team_not_enough_servers")));
-            return;
-        }
-        long count = plugin.playerTeam.values().stream().filter(teamArg::equals).count();
-        if (!teamArg.equals(plugin.playerTeam.get(player.getUniqueId()))
-                && cap > 0
-                && count >= cap) {
-            String dn = "a".equals(teamArg) ? plugin.teamNameA : plugin.teamNameB;
-            player.sendMessage(
-                    Component.text(
-                            plugin.lang.get(
-                                    "team_full",
-                                    "team",
-                                    dn,
-                                    "count",
-                                    String.valueOf(cap),
-                                    "max",
-                                    String.valueOf(cap))));
-            return;
-        }
         plugin.playerTeam.put(player.getUniqueId(), teamArg);
         String dn = "a".equals(teamArg) ? plugin.teamNameA : plugin.teamNameB;
         player.sendMessage(Component.text(plugin.lang.get("team_joined", "team", dn)));
