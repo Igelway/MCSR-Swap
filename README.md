@@ -12,7 +12,7 @@ You can play as one team or one team versus another team. The project consists o
 ## 🚀 Quick Start Options
 
 ### Option 1: Classic Setup (Manual Configuration)
-**Recommended for:** Full control, any platform (Windows/Linux/Mac)
+**Recommended for:** Full control
 
 Follow the setup instructions below. You manually configure all game servers.
 
