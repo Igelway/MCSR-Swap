@@ -25,6 +25,7 @@ import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.packet.s2c.play.SetCameraEntityS2CPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.LiteralText;
 import net.minecraft.util.Identifier;
 import net.minecraft.world.GameMode;
@@ -68,10 +69,18 @@ public class SwapMod implements ModInitializer {
 
     /**
      * Players who are about to join as locked spectators (watchers). Velocity sends
-     * "incoming_spectator" before the watcher connects, so ENTITY_LOAD can immediately put them in
-     * spectator mode and skip state processing.
+     * "incoming_spectator" before the watcher connects, so ENTITY_LOAD can skip survival processing
+     * for them. Actual spectator mode is applied on the first tick (deferred) to guarantee it runs
+     * after {@code sendWorldInfo}, which would otherwise override the game mode.
      */
     private final Set<UUID> pendingSpectators = new HashSet<>();
+
+    /**
+     * Players in {@link #pendingSpectators} who have already fired ENTITY_LOAD and are waiting for
+     * the next tick to receive their spectator mode change (so it lands after {@code
+     * sendWorldInfo}).
+     */
+    private final Set<UUID> deferredSpectatorSwitch = new HashSet<>();
 
     /**
      * Players currently connected to this server. ENTITY_LOAD also fires on dimension changes and
@@ -148,18 +157,10 @@ public class SwapMod implements ModInitializer {
                     if (connectedPlayers.contains(player.getUuid())) return;
                     connectedPlayers.add(player.getUuid());
 
-                    // Incoming watcher: put in spectator immediately, skip everything else.
-                    // The "incoming_spectator" pre-notification from Velocity already marked them.
-                    if (pendingSpectators.remove(player.getUuid())) {
-                        player.interactionManager.setGameMode(
-                                GameMode.SPECTATOR, player.interactionManager.getGameMode());
-                        sendModeToVelocity(player, true);
-                        ServerPlayerEntity toWatch =
-                                findActiveSurvivalPlayer(server, player.getUuid());
-                        if (toWatch != null) {
-                            player.networkHandler.sendPacket(new SetCameraEntityS2CPacket(toWatch));
-                            spectatorCameras.put(player.getUuid(), toWatch.getUuid());
-                        }
+                    // Incoming watcher: skip survival processing. Defer the actual mode switch to
+                    // the next tick so it lands after sendWorldInfo (which would override it).
+                    if (pendingSpectators.contains(player.getUuid())) {
+                        deferredSpectatorSwitch.add(player.getUuid());
                         return;
                     }
 
@@ -217,6 +218,26 @@ public class SwapMod implements ModInitializer {
 
                     stateManager.tickClearRegen(srv);
 
+                    // Apply deferred spectator switches (scheduled in ENTITY_LOAD).
+                    // Runs every tick to avoid a 1-second delay; cleans itself up.
+                    if (!deferredSpectatorSwitch.isEmpty()) {
+                        for (UUID uuid : new HashSet<>(deferredSpectatorSwitch)) {
+                            ServerPlayerEntity watcher = srv.getPlayerManager().getPlayer(uuid);
+                            if (watcher == null) continue;
+                            watcher.interactionManager.setGameMode(
+                                    GameMode.SPECTATOR, watcher.interactionManager.getGameMode());
+                            sendModeToVelocity(watcher, true);
+                            ServerPlayerEntity toWatch = findActiveSurvivalPlayer(srv, uuid);
+                            if (toWatch != null) {
+                                watcher.networkHandler.sendPacket(
+                                        new SetCameraEntityS2CPacket(toWatch));
+                                spectatorCameras.put(uuid, toWatch.getUuid());
+                            }
+                            pendingSpectators.remove(uuid);
+                            deferredSpectatorSwitch.remove(uuid);
+                        }
+                    }
+
                     stateSaveTick++;
                     if (stateSaveTick >= 20) {
                         stateSaveTick = 0;
@@ -242,10 +263,12 @@ public class SwapMod implements ModInitializer {
                         connectedPlayers.retainAll(online);
                         lastKnownGameMode.keySet().retainAll(online);
                         pendingSpectators.retainAll(online);
+                        deferredSpectatorSwitch.retainAll(online);
                         stateManager.cleanupDisconnected(online);
                         spectatorCameras.keySet().retainAll(online);
 
-                        // Re-lock spectator cameras every second so the watcher cannot escape POV
+                        // Re-lock spectator cameras every second so the watcher cannot escape POV.
+                        // Also follows the target across dimensions via teleport.
                         for (Map.Entry<UUID, UUID> cam : spectatorCameras.entrySet()) {
                             ServerPlayerEntity watcher =
                                     srv.getPlayerManager().getPlayer(cam.getKey());
@@ -257,7 +280,19 @@ public class SwapMod implements ModInitializer {
                                 if (target == null) continue;
                                 cam.setValue(target.getUuid());
                             }
-                            watcher.networkHandler.sendPacket(new SetCameraEntityS2CPacket(target));
+                            // Teleport watcher into target's dimension if they differ.
+                            if (watcher.world != target.world) {
+                                watcher.teleport(
+                                        (ServerWorld) target.world,
+                                        target.getX(),
+                                        target.getY(),
+                                        target.getZ(),
+                                        target.getYaw(1.0f),
+                                        target.getPitch(1.0f));
+                            } else {
+                                watcher.networkHandler.sendPacket(
+                                        new SetCameraEntityS2CPacket(target));
+                            }
                         }
                     }
                 });
@@ -372,15 +407,32 @@ public class SwapMod implements ModInitializer {
                 return;
 
             case "incoming_spectator":
-                pendingSpectators.add(UUID.fromString(in.readUTF()));
-                return;
+                {
+                    UUID uuid = UUID.fromString(in.readUTF());
+                    pendingSpectators.add(uuid);
+                    // Late-arrival: if the player is already online, apply spectator immediately.
+                    ServerPlayerEntity alreadyHere = server.getPlayerManager().getPlayer(uuid);
+                    if (alreadyHere != null && !deferredSpectatorSwitch.contains(uuid)) {
+                        alreadyHere.interactionManager.setGameMode(
+                                GameMode.SPECTATOR, alreadyHere.interactionManager.getGameMode());
+                        sendModeToVelocity(alreadyHere, true);
+                        ServerPlayerEntity toWatch = findActiveSurvivalPlayer(server, uuid);
+                        if (toWatch != null) {
+                            alreadyHere.networkHandler.sendPacket(
+                                    new SetCameraEntityS2CPacket(toWatch));
+                            spectatorCameras.put(uuid, toWatch.getUuid());
+                        }
+                        pendingSpectators.remove(uuid);
+                    }
+                    return;
+                }
 
             case "become_spectator":
                 {
                     UUID uuid = UUID.fromString(in.readUTF());
                     ServerPlayerEntity target = server.getPlayerManager().getPlayer(uuid);
                     if (target == null) return;
-                    // Fallback: if incoming_spectator pre-notification was missed, handle it here.
+                    // Fallback: ensure spectator mode regardless of deferred state.
                     target.interactionManager.setGameMode(
                             GameMode.SPECTATOR, target.interactionManager.getGameMode());
                     sendModeToVelocity(target, true);
@@ -389,6 +441,8 @@ public class SwapMod implements ModInitializer {
                         target.networkHandler.sendPacket(new SetCameraEntityS2CPacket(toWatch));
                         spectatorCameras.put(uuid, toWatch.getUuid());
                     }
+                    pendingSpectators.remove(uuid);
+                    deferredSpectatorSwitch.remove(uuid);
                     return;
                 }
         }

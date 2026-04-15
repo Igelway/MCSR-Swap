@@ -63,7 +63,7 @@ public class WorldSwapCommands {
         if (isAdmin(src)) {
             boolean docker = plugin.dockerMode;
             src.sendMessage(Component.text("§7/ms start [--clean] §8| §7/ms stop §8| §7/ms forceswap"));
-            src.sendMessage(Component.text("§7/ms setrotation <s> §8| §7/ms spectate <player>"));
+            src.sendMessage(Component.text("§7/ms setrotation <s>"));
             src.sendMessage(Component.text("§7/ms setteam <a|b|none> <player...> §8"));
             src.sendMessage(Component.text("§7/ms setteamname <a|b> <name>"));
             src.sendMessage(Component.text("§7/ms setversus <true|false> §8| §7/ms state §8| §7/ms player"));
@@ -317,53 +317,6 @@ public class WorldSwapCommands {
         } catch (NumberFormatException e) {
             src.sendMessage(Component.text("§cInvalid number: " + args[0]));
         }
-    }
-
-    void cmdSpectate(CommandSource src, String[] args) {
-        if (!isAdmin(src)) {
-            src.sendMessage(Component.text("§cNo permission!"));
-            return;
-        }
-        if (args.length != 1) {
-            src.sendMessage(Component.text("§eUsage: /ms spectate <player>"));
-            return;
-        }
-        plugin.server
-                .getPlayer(args[0])
-                .ifPresentOrElse(
-                        target -> {
-                            UUID uuid = target.getUniqueId();
-                            if (plugin.spectators.remove(uuid)) {
-                                src.sendMessage(
-                                        Component.text(
-                                                "§a"
-                                                        + target.getUsername()
-                                                        + " is now a participant."));
-                                target.sendMessage(
-                                        Component.text(plugin.lang.get("spectator_removed")));
-                            } else {
-                                plugin.spectators.add(uuid);
-                                src.sendMessage(
-                                        Component.text(
-                                                "§7"
-                                                        + target.getUsername()
-                                                        + " is now a spectator."));
-                                target.sendMessage(
-                                        Component.text(plugin.lang.get("spectator_added")));
-                                // If the game is running the player is currently on a game server –
-                                // send them
-                                // to the lobby immediately so they are not still actively playing.
-                                if (plugin.gameState == GameState.RUNNING) {
-                                    plugin.server
-                                            .getServer(plugin.lobbyServerName)
-                                            .ifPresent(
-                                                    s ->
-                                                            target.createConnectionRequest(s)
-                                                                    .fireAndForget());
-                                }
-                            }
-                        },
-                        () -> src.sendMessage(Component.text("§cPlayer not found: " + args[0])));
     }
 
     /**
