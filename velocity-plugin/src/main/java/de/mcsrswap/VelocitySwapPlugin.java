@@ -413,7 +413,7 @@ public class VelocitySwapPlugin {
                                 rotatePlayers();
                                 currentTime = rotationTime;
                                 return;
-                            } else if (currentTime == 5
+                            } else if (currentTime == 1
                                     && spectateAfterWin
                                     && !watchingPlayers.isEmpty()) {
                                 preRotation();
@@ -914,7 +914,6 @@ public class VelocitySwapPlugin {
                         "stop",
                         "forceswap",
                         "setrotation",
-                        "spectate",
                         "setteam",
                         "setteamname",
                         "setversus",
@@ -955,9 +954,6 @@ public class VelocitySwapPlugin {
                                 break;
                             case "setrotation":
                                 commands.cmdSetRotation(src, rest);
-                                break;
-                            case "spectate":
-                                commands.cmdSpectate(src, rest);
                                 break;
                             case "setteam":
                                 commands.cmdSetTeam(src, rest);
@@ -1012,7 +1008,6 @@ public class VelocitySwapPlugin {
                                                 "stop",
                                                 "forceswap",
                                                 "setrotation",
-                                                "spectate",
                                                 "state",
                                                 "player",
                                                 "seed"));
@@ -1021,7 +1016,7 @@ public class VelocitySwapPlugin {
                                 subs.retainAll(Arrays.asList("stop", "state", "player", "seed"));
                             } else {
                                 // LOBBY – pre-game config; remove runtime-only commands
-                                subs.removeAll(Arrays.asList("forceswap", "spectate"));
+                                subs.removeAll(Arrays.asList("forceswap"));
                             }
                             return subs.stream()
                                     .filter(s -> s.startsWith(prefix))
@@ -1036,10 +1031,6 @@ public class VelocitySwapPlugin {
                                 if (args.length == 2)
                                     return filterPrefix(
                                             Collections.singletonList("--clean"), partial);
-                                break;
-
-                            case "spectate":
-                                if (args.length == 2) return onlinePlayers(partial);
                                 break;
 
                             case "setteam":
