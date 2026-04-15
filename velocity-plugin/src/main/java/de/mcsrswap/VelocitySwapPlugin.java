@@ -50,8 +50,8 @@ public class VelocitySwapPlugin {
     final Map<UUID, String> playerServer = new HashMap<>();
     final Set<String> finishedServers = new HashSet<>();
 
-    /** Players marked as spectators/observers – they are not rotated. */
-    final Set<UUID> spectators = new HashSet<>();
+    /** Players currently participating in the active round, including temporary watchers. */
+    final Set<UUID> activePlayers = new HashSet<>();
 
     /** Versus: team assignment "a" or "b" per player (persists across game starts). */
     final Map<UUID, String> playerTeam = new HashMap<>();
@@ -437,21 +437,19 @@ public class VelocitySwapPlugin {
         // to the next game server. The vanilla disconnect-save fires synchronously when leaving the
         // game server, so the slot .dat is guaranteed to be current by the time the callback runs.
         for (Player player : server.getAllPlayers()) {
-            if (!playerServer.containsKey(player.getUniqueId())) continue;
-            boolean isWatcher = watchingPlayers.containsKey(player.getUniqueId());
-            if (!isWatcher && spectators.contains(player.getUniqueId())) continue;
+            UUID uuid = player.getUniqueId();
+            if (!activePlayers.contains(uuid)) continue;
+            if (!playerServer.containsKey(uuid)) continue;
 
-            List<String> servers = getTeamServers(player.getUniqueId());
-            String current = playerServer.get(player.getUniqueId());
+            List<String> servers = getTeamServers(uuid);
+            String current = playerServer.get(uuid);
             int index = servers.indexOf(current);
             if (index < 0) index = 0;
             index = (index + 1) % servers.size();
             String next = servers.get(index);
-            playerServer.put(player.getUniqueId(), next);
+            playerServer.put(uuid, next);
 
-            if (watchingPlayers.containsKey(player.getUniqueId())) {
-                watchingPlayers.remove(player.getUniqueId());
-            }
+            watchingPlayers.remove(uuid);
 
             final String nextServer = next;
             server.getServer(lobbyServerName)
@@ -459,7 +457,7 @@ public class VelocitySwapPlugin {
                             lobby ->
                                     player.createConnectionRequest(lobby)
                                             .connect()
-                                            .thenAccept(
+                                            .thenAcceptAsync(
                                                     result -> {
                                                         if (!result.isSuccessful()) {
                                                             logger.warn(
@@ -472,7 +470,11 @@ public class VelocitySwapPlugin {
                                                         // written on game-server disconnect.
                                                         // Now forward to next game server.
                                                         forwardFromLobby(player, nextServer);
-                                                    }));
+                                                    },
+                                                    runnable ->
+                                                            server.getScheduler()
+                                                                    .buildTask(this, runnable)
+                                                                    .schedule()));
         }
 
         logger.info("Swapping!");
@@ -495,7 +497,7 @@ public class VelocitySwapPlugin {
     }
 
     /**
-     * Called 5 seconds before rotation. Routes every watching player back to their own assigned
+     * Called 1 second before rotation. Routes every watching player back to their own assigned
      * server so they arrive as a normal survival player. This gives them a clean landing before
      * the T=0 rotation reshuffles everyone, avoids any in-air survival state that would trigger
      * an anti-cheat kick, and ensures each server has exactly one player again before the swap.
@@ -567,8 +569,9 @@ public class VelocitySwapPlugin {
     // =========================
 
     /** Returns all players currently assigned to a game server (active game participants). */
-    private List<Player> getGameParticipants() {
+    List<Player> getGameParticipants() {
         return server.getAllPlayers().stream()
+                .filter(p -> activePlayers.contains(p.getUniqueId()))
                 .filter(p -> playerServer.containsKey(p.getUniqueId()))
                 .collect(Collectors.toList());
     }
@@ -586,6 +589,11 @@ public class VelocitySwapPlugin {
                                                                 .equals(lobbyServerName))
                                         .orElse(false))
                 .collect(Collectors.toList());
+    }
+
+    /** Returns lobby players who should participate in the next game start. */
+    List<Player> getStartParticipants() {
+        return getLobbyPlayers();
     }
 
     private void sendToBackend(Player player, byte[] data) {
@@ -687,17 +695,6 @@ public class VelocitySwapPlugin {
             handleFinish(serverName);
         } else if (sub.equals("mode")) {
             event.setResult(PluginMessageEvent.ForwardResult.handled());
-            UUID uuid = UUID.fromString(in.readUTF());
-            String mode = in.readUTF();
-            if ("spectator".equals(mode)) {
-                // Do not track watching players in the spectators set – they are handled
-                // separately by watchingPlayers and must not be skipped during rotation.
-                if (!watchingPlayers.containsKey(uuid)) {
-                    spectators.add(uuid);
-                }
-            } else {
-                spectators.remove(uuid);
-            }
         }
     }
 
@@ -710,7 +707,7 @@ public class VelocitySwapPlugin {
         // Player arrived at lobby as part of a rotation: forward immediately to their next server.
         // This is handled via the connect() callback chain in rotatePlayers() – no action needed.
         if (!gameServers.contains(serverName)) return;
-        if (spectators.contains(player.getUniqueId())) return; // observer: no state sync
+        if (!activePlayers.contains(player.getUniqueId())) return;
 
         // Watching player: tell the Fabric server to put them in locked spectator mode.
         // incoming_spectator was already sent as a pre-notification (see handleFinish), so the
@@ -842,7 +839,7 @@ public class VelocitySwapPlugin {
                 if (!serverName.equals(e.getValue())) continue;
                 UUID uuid = e.getKey();
                 if (watchingPlayers.containsKey(uuid)) continue;
-                if (spectators.contains(uuid)) continue;
+                if (!activePlayers.contains(uuid)) continue;
 
                 String spectateServer = findSpectateTarget(uuid, serverName);
                 if (spectateServer == null) continue;
@@ -895,8 +892,8 @@ public class VelocitySwapPlugin {
     public void onChooseInitialServer(PlayerChooseInitialServerEvent event) {
         UUID uuid = event.getPlayer().getUniqueId();
         if (gameState != GameState.RUNNING) return;
+        if (!activePlayers.contains(uuid)) return;
         if (!playerServer.containsKey(uuid)) return;
-        if (spectators.contains(uuid)) return;
         String targetServer = playerServer.get(uuid);
         server.getServer(targetServer).ifPresent(event::setInitialServer);
     }
@@ -1121,11 +1118,22 @@ public class VelocitySwapPlugin {
     }
 
     private void startGameInternal() {
-        List<Player> players = new ArrayList<>(getLobbyPlayers());
+        // Invariant: gameServers must be non-empty for the rotation modulo to be well-defined.
+        // detectServers() runs before every startGameInternal() call; if it produced an empty
+        // list the game cannot start.
+        if (gameServers.isEmpty()) {
+            logger.error("Cannot start game: no game servers detected. Check your config.");
+            return;
+        }
 
+        List<Player> players = new ArrayList<>(getStartParticipants());
+
+        activePlayers.clear();
+        for (Player player : players) {
+            activePlayers.add(player.getUniqueId());
+        }
         playerServer.clear();
         finishedServers.clear();
-        spectators.clear();
         watchingPlayers.clear();
         finishedServersA.clear();
         finishedServersB.clear();
@@ -1146,7 +1154,6 @@ public class VelocitySwapPlugin {
             logger.info("Team A servers: {}", teamAServers);
             logger.info("Team B servers: {}", teamBServers);
 
-            // Already-assigned players (only those currently connected)
             List<Player> teamAPlayers =
                     players.stream()
                             .filter(p -> "a".equals(playerTeam.get(p.getUniqueId())))
@@ -1156,76 +1163,21 @@ public class VelocitySwapPlugin {
                             .filter(p -> "b".equals(playerTeam.get(p.getUniqueId())))
                             .collect(Collectors.toList());
 
-            // Random distribution of unassigned (non-spectator) players into remaining slots.
-            // Balanced: always assign to whichever team currently has fewer players,
-            // so the final groups end up as equal as possible.
-            int slotsA = Math.max(0, teamAServers.size() - teamAPlayers.size());
-            int slotsB = Math.max(0, teamBServers.size() - teamBPlayers.size());
-            List<Player> unassigned =
-                    players.stream()
-                            .filter(
-                                    p ->
-                                            !playerTeam.containsKey(p.getUniqueId())
-                                                    && !spectators.contains(p.getUniqueId()))
-                            .collect(Collectors.toList());
-            Collections.shuffle(unassigned);
-            Set<UUID> randomlyAssigned = new HashSet<>();
-            int curA = teamAPlayers.size();
-            int curB = teamBPlayers.size();
-            for (Player p : unassigned) {
-                // Prefer the team with fewer total players; fall back to the other if full.
-                boolean preferA = (curA <= curB && slotsA > 0) || slotsB == 0;
-                if (preferA && slotsA > 0) {
-                    playerTeam.put(p.getUniqueId(), "a");
-                    randomlyAssigned.add(p.getUniqueId());
-                    curA++;
-                    slotsA--;
-                } else if (slotsB > 0) {
-                    playerTeam.put(p.getUniqueId(), "b");
-                    randomlyAssigned.add(p.getUniqueId());
-                    curB++;
-                    slotsB--;
-                } else {
-                    sendToLobby(p); // both teams full
-                }
-            }
-
-            // Re-collect after random assignments
-            List<Player> finalTeamA =
-                    players.stream()
-                            .filter(p -> "a".equals(playerTeam.get(p.getUniqueId())))
-                            .collect(Collectors.toList());
-            List<Player> finalTeamB =
-                    players.stream()
-                            .filter(p -> "b".equals(playerTeam.get(p.getUniqueId())))
-                            .collect(Collectors.toList());
-
-            assignPlayersToServers(finalTeamA, teamAServers);
-            assignPlayersToServers(finalTeamB, teamBServers);
-
-            // Players without a team assignment (spectators, etc.) stay in the lobby
-            for (Player p : players) {
-                if (!playerServer.containsKey(p.getUniqueId())) {
-                    sendToLobby(p);
-                }
-            }
+            assignPlayersToServers(teamAPlayers, teamAServers);
+            assignPlayersToServers(teamBPlayers, teamBServers);
 
             // Send team info + roster to all assigned players
             String rosterA =
-                    finalTeamA.stream().map(Player::getUsername).collect(Collectors.joining(", "));
+                    teamAPlayers.stream().map(Player::getUsername).collect(Collectors.joining(", "));
             String rosterB =
-                    finalTeamB.stream().map(Player::getUsername).collect(Collectors.joining(", "));
+                    teamBPlayers.stream().map(Player::getUsername).collect(Collectors.joining(", "));
             String rosterMsg =
                     "§7" + teamNameA + ": §f" + rosterA + " §7| " + teamNameB + ": §f" + rosterB;
             for (Player p : players) {
                 if (!playerServer.containsKey(p.getUniqueId())) continue;
                 String t = playerTeam.get(p.getUniqueId());
                 String assignedName = "a".equals(t) ? teamNameA : teamNameB;
-                String msgKey =
-                        randomlyAssigned.contains(p.getUniqueId())
-                                ? "team_assignment_random"
-                                : "team_assignment";
-                p.sendMessage(Component.text(lang.get(msgKey, "team", assignedName)));
+                p.sendMessage(Component.text(lang.get("team_assignment", "team", assignedName)));
                 p.sendMessage(Component.text(rosterMsg));
             }
         } else {
@@ -1315,7 +1267,8 @@ public class VelocitySwapPlugin {
     private void teamWins(String team) {
         gameState = GameState.LOBBY;
         String winnerName = "a".equalsIgnoreCase(team) ? teamNameA : teamNameB;
-        for (Player player : getGameParticipants()) {
+        List<Player> participants = new ArrayList<>(getGameParticipants());
+        for (Player player : participants) {
             String t = playerTeam.get(player.getUniqueId());
             if (team.toLowerCase().equals(t)) {
                 player.sendMessage(Component.text(lang.get("game_team_wins", "team", winnerName)));
@@ -1324,6 +1277,8 @@ public class VelocitySwapPlugin {
             }
             sendToLobby(player);
         }
+        watchingPlayers.clear();
+        activePlayers.clear();
     }
 
     private void winGame() {
@@ -1332,9 +1287,10 @@ public class VelocitySwapPlugin {
 
     void endGame() {
         gameState = GameState.LOBBY;
+        List<Player> participants = new ArrayList<>(getGameParticipants());
         watchingPlayers.clear();
         byte[] resetMsg = buildMessage(out -> out.writeUTF("reset"));
-        for (Player player : getGameParticipants()) {
+        for (Player player : participants) {
             player.getCurrentServer()
                     .ifPresent(
                             cs -> {
@@ -1345,6 +1301,7 @@ public class VelocitySwapPlugin {
             player.sendMessage(Component.text(lang.get("game_finished")));
             sendToLobby(player);
         }
+        activePlayers.clear();
     }
 
     private void sendToLobby(Player player) {
