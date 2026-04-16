@@ -139,8 +139,8 @@ public class WorldSwapCommands {
             src.sendMessage(Component.text("§7/ms setteam <a|b|none> <player...> §8"));
             src.sendMessage(Component.text("§7/ms setteamname <a|b> <name>"));
             src.sendMessage(Component.text("§7/ms setversus <true|false> §8| §7/ms state §8| §7/ms player"));
-            src.sendMessage(Component.text("§7/ms cleanup §8- §7Stop Docker containers"));
             if (docker) {
+                src.sendMessage(Component.text("§7/ms cleanup §8- §7Stop Docker containers"));
                 src.sendMessage(Component.text("§7/ms seed [<i> [<val>|clear] | <s1,s2,...>]"));
             }
         }
