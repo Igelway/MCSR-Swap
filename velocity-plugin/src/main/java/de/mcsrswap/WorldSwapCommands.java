@@ -141,7 +141,7 @@ public class WorldSwapCommands {
             src.sendMessage(Component.text("§7/ms setversus <true|false> §8| §7/ms state §8| §7/ms player"));
             src.sendMessage(Component.text("§7/ms cleanup §8- §7Stop Docker containers"));
             if (docker) {
-                src.sendMessage(Component.text("§7/ms seed [<i> [<val>|clear]] §8| §7/ms cleanup"));
+                src.sendMessage(Component.text("§7/ms seed [<i> [<val>|clear] | <s1,s2,...>]"));
             }
         }
         src.sendMessage(Component.text("§7/ms jointeam <a|b>"));
@@ -616,12 +616,13 @@ public class WorldSwapCommands {
         // /ms seed  → list all configured seeds
         if (args.length == 0) {
             List<Long> seeds = plugin.worldSeeds;
-            if (seeds.stream().noneMatch(s -> s != null)) {
-                src.sendMessage(Component.text("§7No seeds configured (all random)."));
+            int slots = Math.max(seeds.size(), plugin.gameServers.size());
+            if (slots == 0) {
+                src.sendMessage(Component.text("§7No seeds configured and no game servers detected."));
             } else {
-                src.sendMessage(Component.text("§eConfigured seeds:"));
-                for (int i = 0; i < seeds.size(); i++) {
-                    Long s = seeds.get(i);
+                src.sendMessage(Component.text("§e=== Seeds ==="));
+                for (int i = 0; i < slots; i++) {
+                    Long s = i < seeds.size() ? seeds.get(i) : null;
                     src.sendMessage(
                             Component.text(
                                     "§7  Game "
@@ -641,6 +642,40 @@ public class WorldSwapCommands {
             }
             plugin.worldSeeds.clear();
             src.sendMessage(Component.text("§aAll seeds cleared (all games will use random seeds)."));
+            return;
+        }
+
+        // /ms seed <s1,s2,...>  → replace the whole seed list at once
+        if (args.length == 1 && args[0].contains(",")) {
+            if (plugin.gameState != GameState.LOBBY) {
+                src.sendMessage(Component.text("§cSeeds can only be changed while in the lobby."));
+                return;
+            }
+            String[] parts = args[0].split(",", -1);
+            List<Long> newSeeds = new ArrayList<>();
+            for (int i = 0; i < parts.length; i++) {
+                String part = parts[i].trim();
+                if (part.isEmpty() || part.equalsIgnoreCase("random")) {
+                    newSeeds.add(null);
+                } else {
+                    try {
+                        newSeeds.add(Long.parseLong(part));
+                    } catch (NumberFormatException e) {
+                        src.sendMessage(
+                                Component.text(
+                                        "§cInvalid seed at position "
+                                                + (i + 1)
+                                                + ": \""
+                                                + part
+                                                + "\" (use a number or leave empty for random)."));
+                        return;
+                    }
+                }
+            }
+            trimTrailingNulls(newSeeds);
+            plugin.worldSeeds.clear();
+            plugin.worldSeeds.addAll(newSeeds);
+            src.sendMessage(Component.text("§a" + newSeeds.size() + " seed(s) set."));
             return;
         }
 
