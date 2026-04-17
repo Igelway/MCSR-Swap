@@ -46,6 +46,8 @@ public final class PluginConfig {
     public final int eyeHoverTicks;
 
     public final List<String> admins;
+    /** Players pre-configured to be ignored at game start (names or UUIDs). */
+    public final List<String> ignorePlayers;
     public final List<Long> worldSeeds;
     public final Docker docker;
 
@@ -94,6 +96,7 @@ public final class PluginConfig {
             boolean saveHotbar,
             int eyeHoverTicks,
             List<String> admins,
+            List<String> ignorePlayers,
             List<Long> worldSeeds,
             Docker docker) {
         this.rotationTime = rotationTime;
@@ -108,6 +111,7 @@ public final class PluginConfig {
         this.saveHotbar = saveHotbar;
         this.eyeHoverTicks = eyeHoverTicks;
         this.admins = admins == null ? List.of() : List.copyOf(admins);
+        this.ignorePlayers = ignorePlayers == null ? List.of() : List.copyOf(ignorePlayers);
         this.worldSeeds = worldSeeds == null ? List.of() : List.copyOf(worldSeeds);
         this.docker = docker;
     }
@@ -151,6 +155,15 @@ public final class PluginConfig {
         if (adminsObj instanceof List) {
             for (Object o : (List<Object>) adminsObj) {
                 admins.add(Objects.toString(o, ""));
+            }
+        }
+
+        List<String> ignorePlayers = new ArrayList<>();
+        Object ignoreObj = map.get("ignorePlayers");
+        if (ignoreObj instanceof List) {
+            for (Object o : (List<Object>) ignoreObj) {
+                String entry = Objects.toString(o, "").trim();
+                if (!entry.isEmpty()) ignorePlayers.add(entry);
             }
         }
 
@@ -247,6 +260,14 @@ public final class PluginConfig {
             }
         }
 
+        String envIgnore = System.getenv("MCSRSWAP_IGNORE_PLAYERS");
+        if (envIgnore != null && !envIgnore.isBlank()) {
+            for (String part : envIgnore.split(",")) {
+                String entry = part.trim();
+                if (!entry.isEmpty()) ignorePlayers.add(entry);
+            }
+        }
+
         return new PluginConfig(
                 rotation,
                 requiredPercentage,
@@ -260,6 +281,7 @@ public final class PluginConfig {
                 saveHotbar,
                 eyeHoverTicks,
                 admins,
+                ignorePlayers,
                 worldSeeds,
                 docker);
     }

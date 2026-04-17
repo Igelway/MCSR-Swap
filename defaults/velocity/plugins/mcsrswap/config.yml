@@ -47,6 +47,14 @@
 #   - "069a79f4-44e9-4726-a5be-fca90e38aaf9"
 #   - SomeUsername
 
+# --- Ignored players ---
+# Players listed here are permanently excluded from game starts.
+# Useful for dedicated spectators/streamers. Accepts UUIDs or usernames.
+# Can also be set via the MCSRSWAP_IGNORE_PLAYERS environment variable (comma-separated).
+# ignorePlayers:
+#   - "069a79f4-44e9-4726-a5be-fca90e38aaf9"
+#   - SpectatorName
+
 # --- World seeds (Docker mode only) ---
 # Fixed seeds assigned to game servers in order. Servers without a seed get a random one.
 # worldSeeds:
