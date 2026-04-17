@@ -1102,7 +1102,19 @@ public class VelocitySwapPlugin {
                                 if (args.length == 2) {
                                     int next = worldSeeds.size() + 1;
                                     List<String> slots = new ArrayList<>();
-                                    if (gameState == GameState.LOBBY) slots.add("clear");
+                                    if (gameState == GameState.LOBBY) {
+                                        slots.add("clear");
+                                        // hint: comma-separated full list based on current seeds
+                                        if (!worldSeeds.isEmpty()) {
+                                            StringBuilder csv = new StringBuilder();
+                                            for (int i = 0; i < worldSeeds.size(); i++) {
+                                                if (i > 0) csv.append(",");
+                                                Long s = worldSeeds.get(i);
+                                                csv.append(s != null ? s : "");
+                                            }
+                                            slots.add(csv.toString());
+                                        }
+                                    }
                                     for (int i = 1; i <= next; i++) slots.add(String.valueOf(i));
                                     return filterPrefix(slots, partial);
                                 }
