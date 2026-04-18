@@ -94,6 +94,13 @@ public class VelocitySwapPlugin {
 
     final Set<UUID> pendingReset = new HashSet<>();
 
+    /**
+     * Players who reconnected mid-game and are currently in the lobby waiting to be forwarded to
+     * their assigned game server. Set by {@link #onChooseInitialServer}; consumed by {@link
+     * #onServerConnected}.
+     */
+    private final Set<UUID> pendingReconnect = new HashSet<>();
+
     /** Servers that have sent a "ready" signal after startup. */
     final Set<String> readyServers = new HashSet<>();
 
@@ -738,7 +745,14 @@ public class VelocitySwapPlugin {
 
         // Player arrived at lobby as part of a rotation: forward immediately to their next server.
         // This is handled via the connect() callback chain in rotatePlayers() – no action needed.
-        if (!gameServers.contains(serverName)) return;
+        // Exception: reconnecting players use pendingReconnect to transit through the lobby.
+        if (!gameServers.contains(serverName)) {
+            UUID uuid = player.getUniqueId();
+            if (pendingReconnect.remove(uuid) && playerServer.containsKey(uuid)) {
+                forwardFromLobby(player, playerServer.get(uuid));
+            }
+            return;
+        }
         if (!activePlayers.contains(player.getUniqueId())) return;
 
         // Watching player: tell the Fabric server to put them in locked spectator mode.
@@ -917,8 +931,10 @@ public class VelocitySwapPlugin {
     // =========================
 
     /**
-     * When a player reconnects to the proxy mid-game, route them directly to their assigned game
-     * server instead of the default (lobby) server.
+     * When a player reconnects to the proxy mid-game, route them to the lobby first. From there,
+     * {@link #onServerConnected} will forward them to their current assigned game server via {@link
+     * #forwardFromLobby}. This ensures that even if a swap happened while the player was
+     * disconnected, they always land on the correct server.
      */
     @Subscribe
     public void onChooseInitialServer(PlayerChooseInitialServerEvent event) {
@@ -926,8 +942,12 @@ public class VelocitySwapPlugin {
         if (gameState != GameState.RUNNING) return;
         if (!activePlayers.contains(uuid)) return;
         if (!playerServer.containsKey(uuid)) return;
-        String targetServer = playerServer.get(uuid);
-        server.getServer(targetServer).ifPresent(event::setInitialServer);
+        server.getServer(lobbyServerName)
+                .ifPresent(
+                        lobby -> {
+                            pendingReconnect.add(uuid);
+                            event.setInitialServer(lobby);
+                        });
     }
 
     private void registerCommands() {
@@ -1188,6 +1208,7 @@ public class VelocitySwapPlugin {
         playerServer.clear();
         finishedServers.clear();
         watchingPlayers.clear();
+        pendingReconnect.clear();
         finishedServersA.clear();
         finishedServersB.clear();
 
@@ -1332,6 +1353,7 @@ public class VelocitySwapPlugin {
         }
         watchingPlayers.clear();
         activePlayers.clear();
+        pendingReconnect.clear();
     }
 
     private void winGame() {
@@ -1355,6 +1377,7 @@ public class VelocitySwapPlugin {
             sendToLobby(player);
         }
         activePlayers.clear();
+        pendingReconnect.clear();
     }
 
     private void sendToLobby(Player player) {
