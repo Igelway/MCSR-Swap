@@ -1391,13 +1391,6 @@ public class VelocitySwapPlugin {
         }
 
         if (source instanceof Player player) {
-            // Check config-based admins
-            String name = player.getUsername();
-            String uuid = player.getUniqueId().toString();
-            if (adminPlayers.contains(name) || adminPlayers.contains(uuid)) {
-                return true;
-            }
-
             // Check LuckPerms permission
             return source.hasPermission("swap.admin");
         }
