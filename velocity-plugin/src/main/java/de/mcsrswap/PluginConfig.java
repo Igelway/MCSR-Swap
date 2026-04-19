@@ -20,7 +20,6 @@ public final class PluginConfig {
     private static final String DEFAULT_LOBBY_SERVER_NAME = "lobby";
     private static final boolean DEFAULT_SPECTATE_AFTER_WIN = true;
     private static final String DEFAULT_SPECTATE_TARGET = "next";
-    private static final int DEFAULT_SPECTATE_MIN_TIME = 15;
     private static final boolean DEFAULT_SAVE_HOTBAR = true;
     private static final int DEFAULT_EYE_HOVER_TICKS = 80;
 
@@ -41,7 +40,6 @@ public final class PluginConfig {
     public final String lobbyServerName;
     public final boolean spectateAfterWin;
     public final String spectateTarget;
-    public final int spectateMinTime;
     public final boolean saveHotbar;
     public final int eyeHoverTicks;
 
@@ -92,7 +90,6 @@ public final class PluginConfig {
             String lobbyServerName,
             boolean spectateAfterWin,
             String spectateTarget,
-            int spectateMinTime,
             boolean saveHotbar,
             int eyeHoverTicks,
             List<String> admins,
@@ -107,7 +104,6 @@ public final class PluginConfig {
         this.lobbyServerName = lobbyServerName;
         this.spectateAfterWin = spectateAfterWin;
         this.spectateTarget = spectateTarget;
-        this.spectateMinTime = spectateMinTime;
         this.saveHotbar = saveHotbar;
         this.eyeHoverTicks = eyeHoverTicks;
         this.admins = admins == null ? List.of() : List.copyOf(admins);
@@ -146,7 +142,6 @@ public final class PluginConfig {
                 toBoolean(map.getOrDefault("spectateAfterWin", DEFAULT_SPECTATE_AFTER_WIN));
         String spectateTarget =
                 Objects.toString(map.getOrDefault("spectateTarget", DEFAULT_SPECTATE_TARGET));
-        int spectateMinTime = toInt(map.getOrDefault("spectateMinTime", DEFAULT_SPECTATE_MIN_TIME));
         boolean saveHotbar = toBoolean(map.getOrDefault("saveHotbar", DEFAULT_SAVE_HOTBAR));
         int eyeHoverTicks = toInt(map.getOrDefault("eyeHoverTicks", DEFAULT_EYE_HOVER_TICKS));
 
@@ -277,7 +272,6 @@ public final class PluginConfig {
                 lobbyServerName,
                 spectateAfterWin,
                 spectateTarget,
-                spectateMinTime,
                 saveHotbar,
                 eyeHoverTicks,
                 admins,

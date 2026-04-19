@@ -82,7 +82,6 @@ public class VelocitySwapPlugin {
 
     boolean spectateAfterWin = false;
     String spectateTarget = "next"; // "next" or "prev" – which adjacent server to watch
-    int spectateMinTime = 15; // only activate spectate if >= this many seconds left
     boolean saveHotbar = true; // rearrange new player's hotbar to match predecessor's hotbar layout
     int eyeHoverTicks = 80; // lifetime of a thrown Eye of Ender in ticks
 
@@ -204,7 +203,6 @@ public class VelocitySwapPlugin {
                                 + "lobbyServerName: lobby\n"
                                 + "spectateAfterWin: false\n"
                                 + "spectateTarget: next\n"
-                                + "spectateMinTime: 15\n"
                                 + "saveHotbar: true\n"
                                 + "eyeHoverTicks: 80\n"
                                 + "admins:\n"
@@ -249,7 +247,6 @@ public class VelocitySwapPlugin {
             lobbyServerName = cfg.lobbyServerName;
             spectateAfterWin = cfg.spectateAfterWin;
             spectateTarget = cfg.spectateTarget;
-            spectateMinTime = cfg.spectateMinTime;
             saveHotbar = cfg.saveHotbar;
             eyeHoverTicks = cfg.eyeHoverTicks;
             worldSeeds = new ArrayList<>(cfg.worldSeeds);
@@ -303,7 +300,7 @@ public class VelocitySwapPlugin {
 
             logger.info(
                     "Config loaded: rotation={}, percent={}, versus={}, language={}, gamePrefix={},"
-                            + " lobby={}, spectateAfterWin={}, spectateTarget={}, spectateMinTime={},"
+                            + " lobby={}, spectateAfterWin={}, spectateTarget={},"
                             + " saveHotbar={}, eyeHoverTicks={}",
                     rotationTime,
                     requiredPercentage,
@@ -313,7 +310,6 @@ public class VelocitySwapPlugin {
                     lobbyServerName,
                     spectateAfterWin,
                     spectateTarget,
-                    spectateMinTime,
                     saveHotbar,
                     eyeHoverTicks);
 
@@ -878,7 +874,7 @@ public class VelocitySwapPlugin {
 
         // If spectateAfterWin is enabled and there is enough time left in the rotation,
         // send the player who just finished to spectate an adjacent server.
-        if (spectateAfterWin && currentTime >= spectateMinTime) {
+        if (spectateAfterWin && currentTime >= 5) {
             for (Map.Entry<UUID, String> e : playerServer.entrySet()) {
                 if (!serverName.equals(e.getValue())) continue;
                 UUID uuid = e.getKey();
@@ -1075,6 +1071,13 @@ public class VelocitySwapPlugin {
 
                         String sub = args[0].toLowerCase();
                         String partial = args[args.length - 1].toLowerCase();
+
+                        // Only admins get argument suggestions for admin-only subcommands.
+                        if (!admin
+                                && !sub.equals("jointeam")
+                                && !sub.equals("ignore")) {
+                            return Collections.emptyList();
+                        }
 
                         switch (sub) {
                             case "start":
@@ -1392,7 +1395,7 @@ public class VelocitySwapPlugin {
             // Check config-based admins
             String name = player.getUsername();
             String uuid = player.getUniqueId().toString();
-            if (admins.contains(name) || admins.contains(uuid)) {
+            if (adminPlayers.contains(name) || adminPlayers.contains(uuid)) {
                 return true;
             }
 
