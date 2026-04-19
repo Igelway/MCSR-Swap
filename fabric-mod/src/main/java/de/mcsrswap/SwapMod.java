@@ -161,12 +161,6 @@ public class SwapMod implements ModInitializer {
                         return;
                     }
 
-                    // Player loaded their data from the slot UUID .dat automatically.
-                    // If they were somehow in spectator before game start, skip processing.
-                    if (player.interactionManager.getGameMode() == GameMode.SPECTATOR) {
-                        return;
-                    }
-
                     // Unfreeze day/night cycle and game ticks on first survival join after reset.
                     if (daylightCycleFrozen) {
                         daylightCycleFrozen = false;
