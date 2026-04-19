@@ -45,7 +45,6 @@ public class VelocitySwapPlugin {
 
     int currentTime;
     GameState gameState = GameState.LOBBY;
-    List<String> admins = new ArrayList<>();
 
     final Map<UUID, String> playerServer = new HashMap<>();
     final Set<String> finishedServers = new HashSet<>();
