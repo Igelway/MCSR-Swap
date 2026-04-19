@@ -64,9 +64,6 @@ public class SwapMod implements ModInitializer {
     private final ScoreboardManager scoreboardManager = new ScoreboardManager();
     final StateManager stateManager = new StateManager();
 
-    /** Last known game mode – used to detect Spectator transitions. */
-    private final Map<UUID, GameMode> lastKnownGameMode = new HashMap<>();
-
     /**
      * Players who are about to join as locked spectators (watchers). Velocity sends
      * "incoming_spectator" before the watcher connects, so ENTITY_LOAD can skip survival processing
@@ -165,10 +162,8 @@ public class SwapMod implements ModInitializer {
                     }
 
                     // Player loaded their data from the slot UUID .dat automatically.
-                    // If they were somehow in spectator (e.g. first join before game start), notify
-                    // Velocity and skip further processing.
+                    // If they were somehow in spectator before game start, skip processing.
                     if (player.interactionManager.getGameMode() == GameMode.SPECTATOR) {
-                        sendModeToVelocity(player, true);
                         return;
                     }
 
@@ -226,7 +221,6 @@ public class SwapMod implements ModInitializer {
                             if (watcher == null) continue;
                             watcher.interactionManager.setGameMode(
                                     GameMode.SPECTATOR, watcher.interactionManager.getGameMode());
-                            sendModeToVelocity(watcher, true);
                             ServerPlayerEntity toWatch = findActiveSurvivalPlayer(srv, uuid);
                             if (toWatch != null) {
                                 watcher.networkHandler.sendPacket(
@@ -246,13 +240,9 @@ public class SwapMod implements ModInitializer {
                                 (PlayerManagerInvoker) srv.getPlayerManager();
                         for (ServerPlayerEntity p : srv.getPlayerManager().getPlayerList()) {
                             online.add(p.getUuid());
-                            GameMode mode = p.interactionManager.getGameMode();
-                            GameMode prev = lastKnownGameMode.put(p.getUuid(), mode);
-                            if (prev != null && prev != mode) {
-                                sendModeToVelocity(p, mode == GameMode.SPECTATOR);
-                            }
                             // Periodically persist the slot state for living survival players.
-                            if (mode != GameMode.SPECTATOR && p.getHealth() > 0.0f) {
+                            if (p.interactionManager.getGameMode() != GameMode.SPECTATOR
+                                    && p.getHealth() > 0.0f) {
                                 pmInvoker.invokeSavePlayerData(p);
                             }
                         }
@@ -261,7 +251,6 @@ public class SwapMod implements ModInitializer {
                                 .filter(u -> !online.contains(u))
                                 .forEach(Lang::removeLocale);
                         connectedPlayers.retainAll(online);
-                        lastKnownGameMode.keySet().retainAll(online);
                         pendingSpectators.retainAll(online);
                         deferredSpectatorSwitch.retainAll(online);
                         stateManager.cleanupDisconnected(online);
@@ -335,17 +324,6 @@ public class SwapMod implements ModInitializer {
         sendToVelocity(player, out -> out.writeUTF("finish"));
     }
 
-    /** Notifies Velocity of a game-mode change (spectator=true → Spectator, false → Survival). */
-    private void sendModeToVelocity(ServerPlayerEntity player, boolean spectator) {
-        sendToVelocity(
-                player,
-                out -> {
-                    out.writeUTF("mode");
-                    out.writeUTF(player.getUuid().toString());
-                    out.writeUTF(spectator ? "spectator" : "survival");
-                });
-    }
-
     private void sendToVelocity(ServerPlayerEntity player, Consumer<ByteArrayDataOutput> writer) {
         ByteArrayDataOutput out = ByteStreams.newDataOutput();
         writer.accept(out);
@@ -415,7 +393,6 @@ public class SwapMod implements ModInitializer {
                     if (alreadyHere != null && !deferredSpectatorSwitch.contains(uuid)) {
                         alreadyHere.interactionManager.setGameMode(
                                 GameMode.SPECTATOR, alreadyHere.interactionManager.getGameMode());
-                        sendModeToVelocity(alreadyHere, true);
                         ServerPlayerEntity toWatch = findActiveSurvivalPlayer(server, uuid);
                         if (toWatch != null) {
                             alreadyHere.networkHandler.sendPacket(
@@ -435,7 +412,6 @@ public class SwapMod implements ModInitializer {
                     // Fallback: ensure spectator mode regardless of deferred state.
                     target.interactionManager.setGameMode(
                             GameMode.SPECTATOR, target.interactionManager.getGameMode());
-                    sendModeToVelocity(target, true);
                     ServerPlayerEntity toWatch = findActiveSurvivalPlayer(server, uuid);
                     if (toWatch != null) {
                         target.networkHandler.sendPacket(new SetCameraEntityS2CPacket(toWatch));

@@ -732,8 +732,6 @@ public class VelocitySwapPlugin {
         } else if (sub.equals("finish")) {
             event.setResult(PluginMessageEvent.ForwardResult.handled());
             handleFinish(serverName);
-        } else if (sub.equals("mode")) {
-            event.setResult(PluginMessageEvent.ForwardResult.handled());
         }
     }
 
