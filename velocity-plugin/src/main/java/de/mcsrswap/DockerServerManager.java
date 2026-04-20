@@ -414,7 +414,8 @@ public class DockerServerManager {
                                 "FABRIC_PROXY_SECRET=" + fabricProxySecret,
                                 "SEED=" + seedStr,
                                 "PUID=" + System.getenv().getOrDefault("PUID", "1000"),
-                                "PGID=" + System.getenv().getOrDefault("PGID", "1000")));
+                                "PGID=" + System.getenv().getOrDefault("PGID", "1000"),
+                                "MCSRSWAP_SLOT=" + serverName));
 
         // Forward MCSRSWAP_GAME_* variables (e.g. MCSRSWAP_GAME_OPS, MCSRSWAP_GAME_DIFFICULTY)
         // to the game container with the prefix stripped.
