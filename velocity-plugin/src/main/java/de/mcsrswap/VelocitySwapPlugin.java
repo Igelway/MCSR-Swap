@@ -344,10 +344,15 @@ public class VelocitySwapPlugin {
 
                                 for (String playerName : adminPlayers) {
                                     try {
-                                        UUID uuid =
-                                                api.getUserManager()
-                                                        .lookupUniqueId(playerName)
-                                                        .get();
+                                        UUID uuid;
+                                        try {
+                                            uuid = UUID.fromString(playerName);
+                                        } catch (IllegalArgumentException e) {
+                                            uuid =
+                                                    api.getUserManager()
+                                                            .lookupUniqueId(playerName)
+                                                            .get();
+                                        }
                                         if (uuid == null) {
                                             logger.warn(
                                                     "Could not find UUID for admin: {}",
@@ -1389,13 +1394,8 @@ public class VelocitySwapPlugin {
         if (source == this.server.getConsoleCommandSource()) {
             return true;
         }
-
-        if (source instanceof Player player) {
-            // Check LuckPerms permission
-            return source.hasPermission("swap.admin");
-        }
-
-        return false;
+        // Check LuckPerms permission
+        return source.hasPermission("swap.admin");
     }
 
     public PluginConfig getPluginConfig() {
