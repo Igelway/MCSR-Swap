@@ -12,7 +12,7 @@
 
 ### Required mods on every game server
 
-These must be present in `mods/` alongside `mcsrswap-fabric-mod-v1.0.12.jar`:
+These must be present in `mods/` alongside `mcsrswap-fabric-mod-v1.0.13.jar`:
 
 - [`fabric-api-0.18.0+build.387-1.16.1.jar`](https://modrinth.com/mod/fabric-api/version/0.18.0+build.387-1.16.1)
 - FabricProxy 1.3.4 – enables Velocity modern forwarding for 1.16.1.  
@@ -35,7 +35,7 @@ Recommended mods (optional but advised):
 
 ### 1.1 Install the plugin
 
-Copy `mcsrswap-velocity-plugin-v1.0.12.jar` into `plugins/`.
+Copy `mcsrswap-velocity-plugin-v1.0.13.jar` into `plugins/`.
 
 ### 1.2 Configure `velocity.toml`
 
@@ -148,7 +148,7 @@ Replace the secret with the value from Velocity's `forwarding.secret` file.
 Place the following in `mods/`:
 
 ```
-mcsrswap-fabric-mod-v1.0.12.jar
+mcsrswap-fabric-mod-v1.0.13.jar
 fabric-api-0.18.0+build.387-1.16.1.jar
 FabricProxy-1.3.4.jar
 ```

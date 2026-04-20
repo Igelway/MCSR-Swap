@@ -4,8 +4,8 @@ You can play as one team or one team versus another team. The project consists o
 
 | File | Where it goes |
 |---|---|
-| `mcsrswap-fabric-mod-v1.0.12.jar` | `mods/` folder of every game server |
-| `mcsrswap-velocity-plugin-v1.0.12.jar` | `plugins/` folder of the Velocity proxy |
+| `mcsrswap-fabric-mod-v1.0.13.jar` | `mods/` folder of every game server |
+| `mcsrswap-velocity-plugin-v1.0.13.jar` | `plugins/` folder of the Velocity proxy |
 
 ---
 
