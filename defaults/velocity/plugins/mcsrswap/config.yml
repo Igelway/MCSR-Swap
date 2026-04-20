@@ -28,10 +28,6 @@
 # Which server to spectate: "next" or "prev" (relative to the winner's server index).
 # spectateTarget: next
 
-# Minimum seconds remaining in the rotation before spectate kicks in.
-# spectateAfterWin only triggers if the remaining time is >= this value.
-# spectateMinTime: 15
-
 # --- Gameplay tweaks ---
 
 # Remember each player's hotbar layout and restore it across rotations.

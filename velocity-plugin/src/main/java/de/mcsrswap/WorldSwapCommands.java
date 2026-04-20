@@ -37,16 +37,7 @@ public class WorldSwapCommands {
         if (src instanceof ConsoleCommandSource) {
             return true;
         }
-        if (src.hasPermission("swap.admin")) {
-            return true;
-        }
-        if (src instanceof Player) {
-            Player player = (Player) src;
-            String username = player.getUsername();
-            String uuid = player.getUniqueId().toString();
-            return plugin.adminPlayers.contains(username) || plugin.adminPlayers.contains(uuid);
-        }
-        return false;
+        return src.hasPermission("swap.admin");        
     }
 
     private String validateStartConfiguration(List<Player> participants) {
