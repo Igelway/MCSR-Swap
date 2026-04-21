@@ -28,9 +28,14 @@ public abstract class PlayerDataMixin {
                             target =
                                     "Lnet/minecraft/entity/player/PlayerEntity;getUuidAsString()Ljava/lang/String;"))
     private String redirectLoadUuid(PlayerEntity player) {
-        return ModConfig.slotUuid != null
-                ? ModConfig.slotUuid.toString()
-                : player.getUuidAsString();
+        if (ModConfig.slotUuid == null) return player.getUuidAsString();
+        // Incoming spectators (watchers) must not load the slot data – they would otherwise
+        // inherit the active player's full inventory and see it briefly before becoming spectator.
+        if (player instanceof ServerPlayerEntity
+                && de.mcsrswap.SwapMod.isIncomingSpectator(player.getUuid())) {
+            return player.getUuidAsString();
+        }
+        return ModConfig.slotUuid.toString();
     }
 
     @Redirect(
