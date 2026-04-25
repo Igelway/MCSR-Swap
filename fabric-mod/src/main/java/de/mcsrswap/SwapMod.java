@@ -336,6 +336,11 @@ public class SwapMod implements ModInitializer {
         return INSTANCE != null && INSTANCE.spectatorCameras.containsKey(uuid);
     }
 
+    /** Called by PlayerDataMixin to skip slot-UUID redirect for incoming spectators. */
+    public static boolean isIncomingSpectator(UUID uuid) {
+        return INSTANCE != null && INSTANCE.pendingSpectators.contains(uuid);
+    }
+
     /** Returns the first survival player on the server who is NOT excludeUuid. */
     private ServerPlayerEntity findActiveSurvivalPlayer(MinecraftServer srv, UUID excludeUuid) {
         for (ServerPlayerEntity p : srv.getPlayerManager().getPlayerList()) {
@@ -413,6 +418,21 @@ public class SwapMod implements ModInitializer {
                     }
                     pendingSpectators.remove(uuid);
                     deferredSpectatorSwitch.remove(uuid);
+                    return;
+                }
+
+            case "prepare_return":
+                {
+                    UUID uuid = UUID.fromString(in.readUTF());
+                    // Release camera lock so the client gets SetCameraEntityS2CPacket(self)
+                    // before disconnecting. Prevents frozen/stuck camera on the home server.
+                    spectatorCameras.remove(uuid);
+                    pendingSpectators.remove(uuid);
+                    deferredSpectatorSwitch.remove(uuid);
+                    ServerPlayerEntity watcher = server.getPlayerManager().getPlayer(uuid);
+                    if (watcher != null) {
+                        watcher.networkHandler.sendPacket(new SetCameraEntityS2CPacket(watcher));
+                    }
                     return;
                 }
         }

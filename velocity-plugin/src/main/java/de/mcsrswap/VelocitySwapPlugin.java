@@ -439,7 +439,7 @@ public class VelocitySwapPlugin {
                                 rotatePlayers();
                                 currentTime = rotationTime;
                                 return;
-                            } else if (currentTime == 1
+                            } else if (currentTime == 2
                                     && spectateAfterWin
                                     && !watchingPlayers.isEmpty()) {
                                 preRotation();
@@ -476,6 +476,13 @@ public class VelocitySwapPlugin {
             playerServer.put(uuid, next);
 
             watchingPlayers.remove(uuid);
+
+            // Player is mid-reconnect (currently in lobby or en-route): advance their assignment
+            // but skip the lobby-connection request. forwardFromLobby() will be called from
+            // onServerConnected when they land on the lobby.
+            if (pendingReconnect.contains(uuid)) {
+                continue;
+            }
 
             final String nextServer = next;
             server.getServer(lobbyServerName)
@@ -523,10 +530,9 @@ public class VelocitySwapPlugin {
     }
 
     /**
-     * Called 1 second before rotation. Routes every watching player back to their own assigned
-     * server so they arrive as a normal survival player. This gives them a clean landing before
-     * the T=0 rotation reshuffles everyone, avoids any in-air survival state that would trigger
-     * an anti-cheat kick, and ensures each server has exactly one player again before the swap.
+     * Called 2 seconds before rotation. Routes every watching player back to their own assigned
+     * server so they arrive as a normal survival player. Sends {@code prepare_return} first to
+     * release the spectator camera lock on the Fabric side before the connection is switched.
      */
     private void preRotation() {
         for (Map.Entry<UUID, String> entry : new ArrayList<>(watchingPlayers.entrySet())) {
@@ -536,12 +542,30 @@ public class VelocitySwapPlugin {
             if (home == null) continue;
             server.getPlayer(watcherUuid)
                     .ifPresent(
-                            p ->
-                                    server.getServer(home)
-                                            .ifPresent(
-                                                    s ->
-                                                            p.createConnectionRequest(s)
-                                                                    .fireAndForget()));
+                            p -> {
+                                // Release camera lock on the spectate server first.
+                                sendToBackend(
+                                        p,
+                                        buildMessage(
+                                                out -> {
+                                                    out.writeUTF("prepare_return");
+                                                    out.writeUTF(p.getUniqueId().toString());
+                                                }));
+                                // Short delay lets the client receive the camera-release packet
+                                // before we disconnect them.
+                                server.getServer(home)
+                                        .ifPresent(
+                                                s ->
+                                                        server.getScheduler()
+                                                                .buildTask(
+                                                                        this,
+                                                                        () ->
+                                                                                p.createConnectionRequest(
+                                                                                                s)
+                                                                                        .fireAndForget())
+                                                                .delay(300, TimeUnit.MILLISECONDS)
+                                                                .schedule());
+                            });
         }
     }
 
@@ -758,19 +782,20 @@ public class VelocitySwapPlugin {
         // Fabric ENTITY_LOAD handler can act immediately. This message is the fallback.
         if (watchingPlayers.containsKey(player.getUniqueId())) {
             final UUID uuid = player.getUniqueId();
-            server.getScheduler()
-                    .buildTask(
-                            this,
-                            () ->
-                                    sendToBackend(
-                                            player,
-                                            buildMessage(
-                                                    out -> {
-                                                        out.writeUTF("become_spectator");
-                                                        out.writeUTF(uuid.toString());
-                                                    })))
-                    .delay(50, TimeUnit.MILLISECONDS)
-                    .schedule();
+            final byte[] becomeSpectatorMsg =
+                    buildMessage(
+                            out -> {
+                                out.writeUTF("become_spectator");
+                                out.writeUTF(uuid.toString());
+                            });
+            // Retry at three increasing delays: getCurrentServer() is not populated at time 0,
+            // and on slower servers ENTITY_LOAD may not have fired yet at 50 ms.
+            for (int delayMs : new int[] {50, 200, 500}) {
+                server.getScheduler()
+                        .buildTask(this, () -> sendToBackend(player, becomeSpectatorMsg))
+                        .delay(delayMs, TimeUnit.MILLISECONDS)
+                        .schedule();
+            }
             return; // no state sync for watchers
         }
 
