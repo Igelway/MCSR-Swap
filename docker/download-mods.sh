@@ -55,3 +55,16 @@ download starlight.jar \
   8492378aefe02917a659e82b24c447ab805f08ca79cd584bc3e884ff08864568
 
 echo "Successfully downloaded and verified all mods"
+
+# Optional mods (only downloaded if the respective env vars are set)
+if [ "${MCSRSWAP_CHUNKY_PRELOAD:-false}" = "true" ]; then
+  download carpet.jar \
+    "https://cdn.modrinth.com/data/TQTTVgYE/versions/cI14KY8A/fabric-carpet-1.16.1-1.4.0%2Bv200623_build2.jar" \
+    f4b3440067eb44725034aed9751626c834d51577bc3b0a86231a5efd4e102f71
+
+  download chunky.jar \
+    "https://cdn.modrinth.com/data/fALzjamp/versions/1.2.54/Chunky-1.2.54.jar" \
+    e56a2e4febffce8435b04d602b7d19a13d5fbb2e07504f094a5911d9b40f8ef5
+
+  echo "Downloaded Carpet + Chunky for preload"
+fi

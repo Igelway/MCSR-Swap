@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -22,6 +23,7 @@ import net.fabricmc.fabric.api.network.ServerSidePacketRegistry;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.network.Packet;
 import net.minecraft.network.PacketByteBuf;
+import net.minecraft.network.packet.s2c.play.GameStateChangeS2CPacket;
 import net.minecraft.network.packet.s2c.play.SetCameraEntityS2CPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -75,9 +77,29 @@ public class SwapMod implements ModInitializer {
     /**
      * Players in {@link #pendingSpectators} who have already fired ENTITY_LOAD and are waiting for
      * the next tick to receive their spectator mode change (so it lands after {@code
-     * sendWorldInfo}).
+     * sendWorldInfo}). Maps watcher UUID → remaining countdown ticks (counts down from 10 to 0).
+     * Spectator packets are re-sent every tick during the countdown.
      */
-    private final Set<UUID> deferredSpectatorSwitch = new HashSet<>();
+    private final Map<UUID, Integer> deferredSpectatorSwitch = new HashMap<>();
+
+    /** Last known dimension key of each spectator's target, for cross-dim grace tracking. */
+    private final Map<UUID, String> spectatorLastTargetDim = new HashMap<>();
+
+    /** Remaining grace cycles before teleporting spectator to newly-entered dimension. */
+    private final Map<UUID, Integer> spectatorDimGrace = new HashMap<>();
+
+    private boolean carpetPresent = false;
+    private boolean carpetFrozen = false;
+    private boolean chunkyPresent = false;
+    private boolean chunkyPreload = false;
+    private int chunkyOwRadius = 800;
+    private int chunkyNetherRadius = 800;
+    private int chunkyEndRadius = 200;
+    private boolean chunkyPreloadInProgress = false;
+    private int chunkyPreloadElapsedTicks = 0;
+
+    /** 10 minutes at 20 ticks/s */
+    private final int chunkyPreloadTimeoutTicks = 12000;
 
     /**
      * Players currently connected to this server. ENTITY_LOAD also fires on dimension changes and
@@ -133,6 +155,46 @@ public class SwapMod implements ModInitializer {
                     server = srv;
                     scoreboardManager.setupScoreboard(srv);
                     freezeWorldTime();
+
+                    carpetPresent = FabricLoader.getInstance().isModLoaded("carpet");
+                    chunkyPresent = FabricLoader.getInstance().isModLoaded("chunky");
+
+                    if (chunkyPresent) {
+                        chunkyPreload =
+                                "true".equalsIgnoreCase(System.getenv("MCSRSWAP_CHUNKY_PRELOAD"));
+                        String envOw = System.getenv("MCSRSWAP_CHUNKY_OW_RADIUS");
+                        if (envOw != null && !envOw.isBlank()) {
+                            try {
+                                chunkyOwRadius = Integer.parseInt(envOw.trim());
+                            } catch (NumberFormatException ignored) {
+                            }
+                        }
+                        String envNether = System.getenv("MCSRSWAP_CHUNKY_NETHER_RADIUS");
+                        if (envNether != null && !envNether.isBlank()) {
+                            try {
+                                chunkyNetherRadius = Integer.parseInt(envNether.trim());
+                            } catch (NumberFormatException ignored) {
+                            }
+                        }
+                        String envEnd = System.getenv("MCSRSWAP_CHUNKY_END_RADIUS");
+                        if (envEnd != null && !envEnd.isBlank()) {
+                            try {
+                                chunkyEndRadius = Integer.parseInt(envEnd.trim());
+                            } catch (NumberFormatException ignored) {
+                            }
+                        }
+                    }
+
+                    if (chunkyPreload) {
+                        try {
+                            Files.deleteIfExists(Path.of("/data/.mcsrswap-ready"));
+                        } catch (IOException ignored) {
+                        }
+                        startChunkyPreload();
+                    } else {
+                        writeReadyFile();
+                        applyCarpetFreeze();
+                    }
                 });
 
         // Incoming plugin messages from Velocity via the v0 networking API
@@ -157,7 +219,7 @@ public class SwapMod implements ModInitializer {
                     // Incoming watcher: skip survival processing. Defer the actual mode switch to
                     // the next tick so it lands after sendWorldInfo (which would override it).
                     if (pendingSpectators.contains(player.getUuid())) {
-                        deferredSpectatorSwitch.add(player.getUuid());
+                        deferredSpectatorSwitch.put(player.getUuid(), 10);
                         return;
                     }
 
@@ -172,6 +234,7 @@ public class SwapMod implements ModInitializer {
                                                         .set(true, server));
                     }
                     frozen = false;
+                    applyCarpetUnfreeze();
 
                     // Always force survival – the slot .dat may contain a different game mode.
                     player.interactionManager.setGameMode(
@@ -203,26 +266,51 @@ public class SwapMod implements ModInitializer {
         // Tick handler: clearRegen, mode detection, periodic save, disconnect cleanup, camera locks
         ServerTickEvents.END_SERVER_TICK.register(
                 srv -> {
+                    // Chunky preload poll runs regardless of the game-frozen state.
+                    if (chunkyPreloadInProgress) {
+                        chunkyPreloadElapsedTicks++;
+                        if (chunkyPreloadElapsedTicks % 20 == 0) {
+                            if (isChunkyDone()
+                                    || chunkyPreloadElapsedTicks >= chunkyPreloadTimeoutTicks) {
+                                chunkyPreloadInProgress = false;
+                                writeReadyFile();
+                                applyCarpetFreeze();
+                            }
+                        }
+                    }
+
                     if (frozen) return;
 
                     stateManager.tickClearRegen(srv);
 
                     // Apply deferred spectator switches (scheduled in ENTITY_LOAD).
-                    // Runs every tick to avoid a 1-second delay; cleans itself up.
+                    // Re-sends spectator packets every tick for 10 ticks to guarantee they arrive
+                    // after sendWorldInfo. Cleans itself up when the countdown reaches 0.
                     if (!deferredSpectatorSwitch.isEmpty()) {
-                        for (UUID uuid : new HashSet<>(deferredSpectatorSwitch)) {
+                        for (UUID uuid : new ArrayList<>(deferredSpectatorSwitch.keySet())) {
                             ServerPlayerEntity watcher = srv.getPlayerManager().getPlayer(uuid);
                             if (watcher == null) continue;
-                            watcher.interactionManager.setGameMode(
-                                    GameMode.SPECTATOR, watcher.interactionManager.getGameMode());
-                            ServerPlayerEntity toWatch = findActiveSurvivalPlayer(srv, uuid);
-                            if (toWatch != null) {
-                                watcher.networkHandler.sendPacket(
-                                        new SetCameraEntityS2CPacket(toWatch));
-                                spectatorCameras.put(uuid, toWatch.getUuid());
+                            int remaining = deferredSpectatorSwitch.get(uuid);
+                            if (remaining == 10) {
+                                watcher.interactionManager.setGameMode(
+                                        GameMode.SPECTATOR,
+                                        watcher.interactionManager.getGameMode());
                             }
-                            pendingSpectators.remove(uuid);
-                            deferredSpectatorSwitch.remove(uuid);
+                            UUID targetUuid = spectatorCameras.get(uuid);
+                            ServerPlayerEntity toWatch =
+                                    targetUuid != null
+                                            ? srv.getPlayerManager().getPlayer(targetUuid)
+                                            : null;
+                            if (toWatch == null) toWatch = findActiveSurvivalPlayer(srv, uuid);
+                            forceSpectatorPackets(watcher, toWatch);
+                            if (toWatch != null) spectatorCameras.put(uuid, toWatch.getUuid());
+                            remaining--;
+                            if (remaining <= 0) {
+                                pendingSpectators.remove(uuid);
+                                deferredSpectatorSwitch.remove(uuid);
+                            } else {
+                                deferredSpectatorSwitch.put(uuid, remaining);
+                            }
                         }
                     }
 
@@ -246,25 +334,45 @@ public class SwapMod implements ModInitializer {
                                 .forEach(Lang::removeLocale);
                         connectedPlayers.retainAll(online);
                         pendingSpectators.retainAll(online);
-                        deferredSpectatorSwitch.retainAll(online);
+                        deferredSpectatorSwitch.keySet().retainAll(online);
                         stateManager.cleanupDisconnected(online);
                         spectatorCameras.keySet().retainAll(online);
+                        spectatorLastTargetDim.keySet().retainAll(spectatorCameras.keySet());
+                        spectatorDimGrace.keySet().retainAll(spectatorCameras.keySet());
 
                         // Re-lock spectator cameras every second so the watcher cannot escape POV.
-                        // Also follows the target across dimensions via teleport.
+                        // Follows the target across dimensions with a 2-cycle grace period to avoid
+                        // teleporting the watcher to stale Overworld coordinates when the target
+                        // enters a portal (the target's position lags ~1 cycle on dimension
+                        // change).
                         for (Map.Entry<UUID, UUID> cam : spectatorCameras.entrySet()) {
+                            UUID watcherUuid = cam.getKey();
                             ServerPlayerEntity watcher =
-                                    srv.getPlayerManager().getPlayer(cam.getKey());
+                                    srv.getPlayerManager().getPlayer(watcherUuid);
                             ServerPlayerEntity target =
                                     srv.getPlayerManager().getPlayer(cam.getValue());
                             if (watcher == null) continue;
                             if (target == null) {
-                                target = findActiveSurvivalPlayer(srv, cam.getKey());
+                                target = findActiveSurvivalPlayer(srv, watcherUuid);
                                 if (target == null) continue;
                                 cam.setValue(target.getUuid());
                             }
-                            // Teleport watcher into target's dimension if they differ.
                             if (watcher.world != target.world) {
+                                String currentDim =
+                                        target.world.getRegistryKey().getValue().toString();
+                                String lastDim = spectatorLastTargetDim.get(watcherUuid);
+                                if (!currentDim.equals(lastDim)) {
+                                    // Target just changed dimension — start grace period.
+                                    spectatorLastTargetDim.put(watcherUuid, currentDim);
+                                    spectatorDimGrace.put(watcherUuid, 2);
+                                    continue;
+                                }
+                                int grace = spectatorDimGrace.getOrDefault(watcherUuid, 0);
+                                if (grace > 0) {
+                                    spectatorDimGrace.put(watcherUuid, grace - 1);
+                                    continue;
+                                }
+                                // Grace expired — safe to follow into the new dimension.
                                 watcher.teleport(
                                         (ServerWorld) target.world,
                                         target.getX(),
@@ -273,6 +381,8 @@ public class SwapMod implements ModInitializer {
                                         target.getYaw(1.0f),
                                         target.getPitch(1.0f));
                             } else {
+                                spectatorLastTargetDim.remove(watcherUuid);
+                                spectatorDimGrace.remove(watcherUuid);
                                 watcher.networkHandler.sendPacket(
                                         new SetCameraEntityS2CPacket(target));
                             }
@@ -389,13 +499,12 @@ public class SwapMod implements ModInitializer {
                     pendingSpectators.add(uuid);
                     // Late-arrival: if the player is already online, apply spectator immediately.
                     ServerPlayerEntity alreadyHere = server.getPlayerManager().getPlayer(uuid);
-                    if (alreadyHere != null && !deferredSpectatorSwitch.contains(uuid)) {
+                    if (alreadyHere != null && !deferredSpectatorSwitch.containsKey(uuid)) {
                         alreadyHere.interactionManager.setGameMode(
                                 GameMode.SPECTATOR, alreadyHere.interactionManager.getGameMode());
                         ServerPlayerEntity toWatch = findActiveSurvivalPlayer(server, uuid);
                         if (toWatch != null) {
-                            alreadyHere.networkHandler.sendPacket(
-                                    new SetCameraEntityS2CPacket(toWatch));
+                            forceSpectatorPackets(alreadyHere, toWatch);
                             spectatorCameras.put(uuid, toWatch.getUuid());
                         }
                         pendingSpectators.remove(uuid);
@@ -413,7 +522,7 @@ public class SwapMod implements ModInitializer {
                             GameMode.SPECTATOR, target.interactionManager.getGameMode());
                     ServerPlayerEntity toWatch = findActiveSurvivalPlayer(server, uuid);
                     if (toWatch != null) {
-                        target.networkHandler.sendPacket(new SetCameraEntityS2CPacket(toWatch));
+                        forceSpectatorPackets(target, toWatch);
                         spectatorCameras.put(uuid, toWatch.getUuid());
                     }
                     pendingSpectators.remove(uuid);
@@ -429,6 +538,8 @@ public class SwapMod implements ModInitializer {
                     spectatorCameras.remove(uuid);
                     pendingSpectators.remove(uuid);
                     deferredSpectatorSwitch.remove(uuid);
+                    spectatorLastTargetDim.remove(uuid);
+                    spectatorDimGrace.remove(uuid);
                     ServerPlayerEntity watcher = server.getPlayerManager().getPlayer(uuid);
                     if (watcher != null) {
                         watcher.networkHandler.sendPacket(new SetCameraEntityS2CPacket(watcher));
@@ -451,6 +562,7 @@ public class SwapMod implements ModInitializer {
                 .forEach(p -> p.sendMessage(new LiteralText(Lang.newRound(p.getUuid())), false));
         freezeWorldTime();
         scoreboardManager.update(finished, completedWorlds, requiredWorlds, currentTime);
+        applyCarpetFreeze();
     }
 
     /** Freezes time at 0 and stops the day/night cycle until a player joins. */
@@ -464,5 +576,87 @@ public class SwapMod implements ModInitializer {
                                     .get(GameRules.DO_DAYLIGHT_CYCLE)
                                     .set(false, server);
                         });
+    }
+
+    /**
+     * Sends spectator mode packets to the client to force the spectator state every tick during the
+     * deferred countdown. Also sends a camera-lock packet when a target is provided.
+     */
+    private void forceSpectatorPackets(ServerPlayerEntity watcher, ServerPlayerEntity target) {
+        watcher.networkHandler.sendPacket(
+                new GameStateChangeS2CPacket(
+                        GameStateChangeS2CPacket.GAME_MODE_CHANGED,
+                        (float) GameMode.SPECTATOR.getId()));
+        watcher.sendAbilitiesUpdate();
+        if (target != null) {
+            watcher.networkHandler.sendPacket(new SetCameraEntityS2CPacket(target));
+        }
+    }
+
+    /** Applies Carpet tick-freeze when Carpet is present and not already frozen. */
+    private void applyCarpetFreeze() {
+        if (carpetFrozen || !carpetPresent || chunkyPreloadInProgress) return;
+        server.getCommandManager().execute(server.getCommandSource(), "tick freeze");
+        carpetFrozen = true;
+    }
+
+    /** Releases Carpet tick-freeze when it is currently active. */
+    private void applyCarpetUnfreeze() {
+        if (!carpetFrozen || !carpetPresent) return;
+        server.getCommandManager().execute(server.getCommandSource(), "tick unfreeze");
+        carpetFrozen = false;
+    }
+
+    /**
+     * Writes the ready-file that Velocity polls to know when this server is ready to accept
+     * players.
+     */
+    private void writeReadyFile() {
+        try {
+            Files.writeString(Path.of("/data/.mcsrswap-ready"), "ready");
+        } catch (IOException ignored) {
+        }
+    }
+
+    /** Starts Chunky pre-generation for all three dimensions. */
+    private void startChunkyPreload() {
+        chunkyPreloadInProgress = true;
+        chunkyPreloadElapsedTicks = 0;
+        server.getCommandManager()
+                .execute(server.getCommandSource(), "chunky world minecraft:overworld");
+        server.getCommandManager()
+                .execute(server.getCommandSource(), "chunky radius " + chunkyOwRadius);
+        server.getCommandManager().execute(server.getCommandSource(), "chunky shape circle");
+        server.getCommandManager().execute(server.getCommandSource(), "chunky start");
+        server.getCommandManager()
+                .execute(server.getCommandSource(), "chunky world minecraft:the_nether");
+        server.getCommandManager()
+                .execute(server.getCommandSource(), "chunky radius " + chunkyNetherRadius);
+        server.getCommandManager().execute(server.getCommandSource(), "chunky shape circle");
+        server.getCommandManager().execute(server.getCommandSource(), "chunky start");
+        server.getCommandManager()
+                .execute(server.getCommandSource(), "chunky world minecraft:the_end");
+        server.getCommandManager()
+                .execute(server.getCommandSource(), "chunky radius " + chunkyEndRadius);
+        server.getCommandManager().execute(server.getCommandSource(), "chunky shape circle");
+        server.getCommandManager().execute(server.getCommandSource(), "chunky start");
+    }
+
+    /**
+     * Checks via reflection whether all Chunky generation tasks are done. Returns {@code true} if
+     * Chunky is absent, unreachable, or has no running tasks.
+     */
+    private boolean isChunkyDone() {
+        try {
+            Class<?> providerClass = Class.forName("org.popcraft.chunky.ChunkyProvider");
+            java.lang.reflect.Method getMethod = providerClass.getMethod("get");
+            Object chunkyInstance = getMethod.invoke(null);
+            java.lang.reflect.Method getTasksMethod =
+                    chunkyInstance.getClass().getMethod("getGenerationTasks");
+            Map<?, ?> tasks = (Map<?, ?>) getTasksMethod.invoke(chunkyInstance);
+            return tasks.isEmpty();
+        } catch (Exception e) {
+            return true;
+        }
     }
 }

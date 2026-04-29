@@ -40,6 +40,7 @@ public class VelocitySwapPlugin {
     boolean versusMode = false;
     String gameServerPrefix = "game";
     String lobbyServerName = "lobby";
+    String limboServerName = "limbo";
     final VelocityLang lang = new VelocityLang();
     final Set<String> adminPlayers = new HashSet<>();
 
@@ -244,6 +245,7 @@ public class VelocitySwapPlugin {
             // use typed config values
             gameServerPrefix = cfg.gameServerPrefix;
             lobbyServerName = cfg.lobbyServerName;
+            limboServerName = cfg.limboServerName;
             spectateAfterWin = cfg.spectateAfterWin;
             spectateTarget = cfg.spectateTarget;
             saveHotbar = cfg.saveHotbar;
@@ -485,7 +487,7 @@ public class VelocitySwapPlugin {
             }
 
             final String nextServer = next;
-            server.getServer(lobbyServerName)
+            server.getServer(getTransitServer())
                     .ifPresent(
                             lobby ->
                                     player.createConnectionRequest(lobby)
@@ -494,12 +496,13 @@ public class VelocitySwapPlugin {
                                                     result -> {
                                                         if (!result.isSuccessful()) {
                                                             logger.warn(
-                                                                    "Failed to route {} to lobby"
-                                                                            + " during rotation",
+                                                                    "Failed to route {} to transit"
+                                                                            + " server during"
+                                                                            + " rotation",
                                                                     player.getUsername());
                                                             return;
                                                         }
-                                                        // Player arrived at lobby; slot .dat was
+                                                        // Player arrived at transit server; slot .dat was
                                                         // written on game-server disconnect.
                                                         // Now forward to next game server.
                                                         forwardFromLobby(player, nextServer);
@@ -639,6 +642,17 @@ public class VelocitySwapPlugin {
                                                                 .equals(lobbyServerName))
                                         .orElse(false))
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Returns the transit server used to buffer players between game servers during rotation.
+     * Uses the limbo server if it is registered with Velocity; falls back to the lobby.
+     */
+    private String getTransitServer() {
+        if (server.getServer(limboServerName).isPresent()) {
+            return limboServerName;
+        }
+        return lobbyServerName;
     }
 
     /** Returns lobby players who should participate in the next game start. */
@@ -965,7 +979,7 @@ public class VelocitySwapPlugin {
         if (gameState != GameState.RUNNING) return;
         if (!activePlayers.contains(uuid)) return;
         if (!playerServer.containsKey(uuid)) return;
-        server.getServer(lobbyServerName)
+        server.getServer(getTransitServer())
                 .ifPresent(
                         lobby -> {
                             pendingReconnect.add(uuid);

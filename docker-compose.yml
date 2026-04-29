@@ -8,6 +8,7 @@ services:
     depends_on:
       - docker-proxy
       - lobby
+      - limbo
     volumes:
       - ./data/velocity:/data
       # Game-server data directories are created here by the plugin and bind-mounted into game containers.
@@ -19,12 +20,18 @@ services:
       MINECRAFT_SERVER_EULA: ${MINECRAFT_SERVER_EULA:-}
       MCSRSWAP_GAMESERVER_IMAGE: ${MCSRSWAP_GAMESERVER_IMAGE:-ghcr.io/igelway/mcsr-swap-gameserver:latest}
       MCSRSWAP_LOBBY_ADDRESS: ${MCSRSWAP_LOBBY_ADDRESS:-lobby}
+      MCSRSWAP_LIMBO_ADDRESS: ${MCSRSWAP_LIMBO_ADDRESS:-limbo}
       # Docker network name for spawned game servers
       MCSRSWAP_DOCKER_NETWORK: ${MCSRSWAP_DOCKER_NETWORK:-mcsrswap-network}
       # Docker host URL (uses socket proxy instead of mounting /var/run/docker.sock directly)
       MCSRSWAP_DOCKER_HOST: ${MCSRSWAP_DOCKER_HOST:-tcp://docker-proxy:2375}
       # Host-side base path for game-server data; the plugin creates per-server subdirs here.
       GAME_DATA_DIR: ${GAME_DATA_DIR:-}
+      # Chunky pre-generation (requires Carpet+Chunky mods in game image, default off)
+      MCSRSWAP_CHUNKY_PRELOAD: ${MCSRSWAP_CHUNKY_PRELOAD:-false}
+      MCSRSWAP_CHUNKY_OW_RADIUS: ${MCSRSWAP_CHUNKY_OW_RADIUS:-800}
+      MCSRSWAP_CHUNKY_NETHER_RADIUS: ${MCSRSWAP_CHUNKY_NETHER_RADIUS:-800}
+      MCSRSWAP_CHUNKY_END_RADIUS: ${MCSRSWAP_CHUNKY_END_RADIUS:-200}
     env_file:
       - path: .env
         required: false
@@ -93,6 +100,20 @@ services:
       - mcsrswap-network
     restart: unless-stopped
     user: "minecraft:minecraft"
+
+  limbo:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.nanolimbo
+    image: ${MCSRSWAP_LIMBO_IMAGE:-ghcr.io/igelway/mcsr-swap-limbo:latest}
+    container_name: mcsrswap-limbo
+    expose:
+      - "25565"
+    secrets:
+      - forwarding_secret
+    networks:
+      - mcsrswap-network
+    restart: unless-stopped
 
   # Optional playit.gg service – only starts when the "playit" profile is active.
   # Run with: docker compose --profile playit up -d

@@ -415,7 +415,21 @@ public class DockerServerManager {
                                 "SEED=" + seedStr,
                                 "PUID=" + System.getenv().getOrDefault("PUID", "1000"),
                                 "PGID=" + System.getenv().getOrDefault("PGID", "1000"),
-                                "MCSRSWAP_SLOT=" + serverName));
+                                "MCSRSWAP_SLOT=" + serverName,
+                                "MCSRSWAP_CHUNKY_PRELOAD="
+                                        + System.getenv()
+                                                .getOrDefault("MCSRSWAP_CHUNKY_PRELOAD", "false"),
+                                "MCSRSWAP_CHUNKY_OW_RADIUS="
+                                        + System.getenv()
+                                                .getOrDefault("MCSRSWAP_CHUNKY_OW_RADIUS", "800"),
+                                "MCSRSWAP_CHUNKY_NETHER_RADIUS="
+                                        + System.getenv()
+                                                .getOrDefault(
+                                                        "MCSRSWAP_CHUNKY_NETHER_RADIUS", "800"),
+                                "MCSRSWAP_CHUNKY_END_RADIUS="
+                                        + System.getenv()
+                                                .getOrDefault(
+                                                        "MCSRSWAP_CHUNKY_END_RADIUS", "200")));
 
         // Forward MCSRSWAP_GAME_* variables (e.g. MCSRSWAP_GAME_OPS, MCSRSWAP_GAME_DIFFICULTY)
         // to the game container with the prefix stripped.
@@ -699,6 +713,65 @@ public class DockerServerManager {
     }
 
     /**
+     * Polls each game server's {@code /managed-data/{name}/.mcsrswap-ready} file, which the Fabric
+     * mod writes when Chunky preload has finished. Times out after 10 minutes.
+     */
+    private java.util.concurrent.CompletableFuture<Boolean> waitForChunkyReady(
+            List<String> serverNames) {
+        logger.info(
+                "Waiting for Chunky preload to complete on {} game server(s)...",
+                serverNames.size());
+        java.util.concurrent.CompletableFuture<Boolean> future =
+                new java.util.concurrent.CompletableFuture<>();
+        Set<String> pending = ConcurrentHashMap.newKeySet();
+        pending.addAll(serverNames);
+
+        final int maxAttempts = 300; // 10 min at 2 s intervals
+        final int[] attempt = {0};
+
+        server.getScheduler()
+                .buildTask(
+                        plugin,
+                        new Runnable() {
+                            @Override
+                            public void run() {
+                                attempt[0]++;
+                                for (String serverName : new ArrayList<>(pending)) {
+                                    java.nio.file.Path readyFile =
+                                            java.nio.file.Paths.get(
+                                                    GAME_DATA_DIR_CONTAINER,
+                                                    serverName,
+                                                    ".mcsrswap-ready");
+                                    if (java.nio.file.Files.exists(readyFile)) {
+                                        logger.info(
+                                                "Chunky preload done for server {}", serverName);
+                                        pending.remove(serverName);
+                                    }
+                                }
+                                if (pending.isEmpty()) {
+                                    logger.info("Chunky preload complete on all servers!");
+                                    future.complete(true);
+                                } else if (attempt[0] >= maxAttempts) {
+                                    logger.warn(
+                                            "Timeout waiting for Chunky ready files. Pending: {}"
+                                                    + ". Proceeding anyway.",
+                                            pending);
+                                    future.complete(false);
+                                } else {
+                                    server.getScheduler()
+                                            .buildTask(plugin, this)
+                                            .delay(2, TimeUnit.SECONDS)
+                                            .schedule();
+                                }
+                            }
+                        })
+                .delay(2, TimeUnit.SECONDS)
+                .schedule();
+
+        return future;
+    }
+
+    /**
      * Wait for servers to be pingable via Velocity's ping API. This ensures the Minecraft server is
      * actually accepting connections.
      */
@@ -762,7 +835,17 @@ public class DockerServerManager {
                                                                 "All {} servers are pingable and"
                                                                         + " ready!",
                                                                 serverNames.size());
-                                                        future.complete(true);
+                                                        String chunkyPreload =
+                                                                System.getenv(
+                                                                        "MCSRSWAP_CHUNKY_PRELOAD");
+                                                        if ("true"
+                                                                .equalsIgnoreCase(chunkyPreload)) {
+                                                            waitForChunkyReady(serverNames)
+                                                                    .thenAccept(
+                                                                            future::complete);
+                                                        } else {
+                                                            future.complete(true);
+                                                        }
                                                     } else if (attempt[0] >= maxAttempts) {
                                                         logger.error(
                                                                 "Timeout waiting for servers to"
