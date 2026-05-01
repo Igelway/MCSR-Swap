@@ -13,6 +13,7 @@ This directory contains the GitHub Actions workflow for automatically building a
 2. **Velocity Plugin** → `mcsrswap-velocity-plugin-1.0.jar`
 3. **Game Server Image** → `ghcr.io/OWNER/REPO-gameserver:latest`
 4. **Velocity Image** → `ghcr.io/OWNER/REPO-velocity:latest`
+5. **Limbo Image** → `ghcr.io/OWNER/REPO-limbo:latest`
 
 ### Published to
 **GitHub Container Registry (ghcr.io)**
@@ -21,6 +22,7 @@ Images are publicly accessible at:
 ```
 ghcr.io/OWNER/REPO-velocity:latest
 ghcr.io/OWNER/REPO-gameserver:latest
+ghcr.io/OWNER/REPO-limbo:latest
 ```
 
 ### Usage
@@ -75,6 +77,7 @@ cd velocity-plugin && mvn clean package && cd ..
 # Build Docker Images
 docker build -f Dockerfile.gameserver -t test-gameserver .
 docker build -f Dockerfile.velocity -t test-velocity .
+docker build -f Dockerfile.limbo -t test-limbo .
 
 # Test locally
 MCSRSWAP_VELOCITY_IMAGE=test-velocity docker-compose up

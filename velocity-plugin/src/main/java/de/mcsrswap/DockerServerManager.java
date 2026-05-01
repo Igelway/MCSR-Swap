@@ -421,11 +421,11 @@ public class DockerServerManager {
                                                 .getOrDefault("MCSRSWAP_CHUNKY_PRELOAD", "false"),
                                 "MCSRSWAP_CHUNKY_OW_RADIUS="
                                         + System.getenv()
-                                                .getOrDefault("MCSRSWAP_CHUNKY_OW_RADIUS", "800"),
+                                                .getOrDefault("MCSRSWAP_CHUNKY_OW_RADIUS", "200"),
                                 "MCSRSWAP_CHUNKY_NETHER_RADIUS="
                                         + System.getenv()
                                                 .getOrDefault(
-                                                        "MCSRSWAP_CHUNKY_NETHER_RADIUS", "800"),
+                                                        "MCSRSWAP_CHUNKY_NETHER_RADIUS", "200"),
                                 "MCSRSWAP_CHUNKY_END_RADIUS="
                                         + System.getenv()
                                                 .getOrDefault(
