@@ -756,7 +756,7 @@ public class DockerServerManager {
                                             "Timeout waiting for Chunky ready files. Pending: {}"
                                                     + ". Proceeding anyway.",
                                             pending);
-                                    future.complete(false);
+                                    future.complete(true);
                                 } else {
                                     server.getScheduler()
                                             .buildTask(plugin, this)

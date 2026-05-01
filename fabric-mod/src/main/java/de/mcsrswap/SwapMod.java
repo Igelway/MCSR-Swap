@@ -522,7 +522,13 @@ public class SwapMod implements ModInitializer {
 
             case "reset":
                 resetWorldState();
-                frozen = true;
+                if (hasActiveRunner(server)) {
+                    frozen = false;
+                    applyCarpetUnfreeze();
+                } else {
+                    frozen = true;
+                    applyCarpetFreeze();
+                }
                 return;
 
             case "savehotbar":
@@ -606,7 +612,6 @@ public class SwapMod implements ModInitializer {
                 .forEach(p -> p.sendMessage(new LiteralText(Lang.newRound(p.getUuid())), false));
         freezeWorldTime();
         scoreboardManager.update(finished, completedWorlds, requiredWorlds, currentTime);
-        applyCarpetFreeze();
     }
 
     /** Freezes time at 0 and stops the day/night cycle until a player joins. */
