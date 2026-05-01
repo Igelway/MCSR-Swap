@@ -177,8 +177,8 @@ MCSRSWAP_LIMBO_IMAGE=ghcr.io/local/mcsr-swap-limbo:latest
 - `MCSRSWAP_LOBBY_ADDRESS` – Lobby server hostname (default: `lobby`)
 - `MCSRSWAP_LIMBO_ADDRESS` – Limbo server hostname (default: `limbo`)
 - `MCSRSWAP_CHUNKY_PRELOAD` – Enable Chunky chunk pre-generation before game start (default: `false`)
-- `MCSRSWAP_CHUNKY_OW_RADIUS` – Overworld pre-gen radius in chunks (default: `800`)
-- `MCSRSWAP_CHUNKY_NETHER_RADIUS` – Nether pre-gen radius in chunks (default: `800`)
+- `MCSRSWAP_CHUNKY_OW_RADIUS` – Overworld pre-gen radius in chunks (default: `200`)
+- `MCSRSWAP_CHUNKY_NETHER_RADIUS` – Nether pre-gen radius in chunks (default: `200`)
 - `MCSRSWAP_CHUNKY_END_RADIUS` – End pre-gen radius in chunks (default: `200`)
 - `GAME_DATA_DIR` – Host path for game server data directories (default: `./data`)
 
