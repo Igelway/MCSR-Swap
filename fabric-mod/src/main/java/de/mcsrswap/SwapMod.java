@@ -287,9 +287,11 @@ public class SwapMod implements ModInitializer {
                     }
 
                     // Chunky preload poll runs regardless of the game-frozen state.
+                    // Wait at least 3 seconds (60 ticks) before the first done-check so that
+                    // Chunky's tasks have time to register after /chunky start is issued.
                     if (chunkyPreloadInProgress) {
                         chunkyPreloadElapsedTicks++;
-                        if (chunkyPreloadElapsedTicks % 20 == 0) {
+                        if (chunkyPreloadElapsedTicks >= 60 && chunkyPreloadElapsedTicks % 20 == 0) {
                             if (isChunkyDone()
                                     || chunkyPreloadElapsedTicks >= chunkyPreloadTimeoutTicks) {
                                 chunkyPreloadInProgress = false;
@@ -686,18 +688,22 @@ public class SwapMod implements ModInitializer {
     /**
      * Checks via reflection whether all Chunky generation tasks are done. Returns {@code true} if
      * Chunky is absent, unreachable, or has no running tasks.
+     *
+     * <p>Chunky 1.2.54 exposes its instance via {@code ChunkyFabric.getChunky()}, reachable through
+     * FabricLoader's "main" entrypoints. There is no static {@code ChunkyProvider} singleton.
      */
     private boolean isChunkyDone() {
         try {
-            Class<?> providerClass = Class.forName("org.popcraft.chunky.ChunkyProvider");
-            java.lang.reflect.Method getMethod = providerClass.getMethod("get");
-            Object chunkyInstance = getMethod.invoke(null);
-            java.lang.reflect.Method getTasksMethod =
-                    chunkyInstance.getClass().getMethod("getGenerationTasks");
-            Map<?, ?> tasks = (Map<?, ?>) getTasksMethod.invoke(chunkyInstance);
-            return tasks.isEmpty();
-        } catch (Exception e) {
-            return true;
+            for (ModInitializer entry :
+                    FabricLoader.getInstance().getEntrypoints("main", ModInitializer.class)) {
+                if (!entry.getClass().getName().equals("org.popcraft.chunky.ChunkyFabric")) continue;
+                Object chunky = entry.getClass().getMethod("getChunky").invoke(entry);
+                Map<?, ?> tasks =
+                        (Map<?, ?>) chunky.getClass().getMethod("getGenerationTasks").invoke(chunky);
+                return tasks.isEmpty();
+            }
+        } catch (Exception ignored) {
         }
+        return true;
     }
 }
