@@ -106,6 +106,7 @@ services:
       context: ./docker
       dockerfile: Dockerfile.nanolimbo
     image: ${MCSRSWAP_LIMBO_IMAGE:-ghcr.io/igelway/mcsr-swap-limbo:latest}
+    pull_policy: build
     container_name: mcsrswap-limbo
     expose:
       - "25565"
