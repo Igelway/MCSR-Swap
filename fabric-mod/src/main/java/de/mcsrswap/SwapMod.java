@@ -291,7 +291,8 @@ public class SwapMod implements ModInitializer {
                     // Chunky's tasks have time to register after /chunky start is issued.
                     if (chunkyPreloadInProgress) {
                         chunkyPreloadElapsedTicks++;
-                        if (chunkyPreloadElapsedTicks >= 60 && chunkyPreloadElapsedTicks % 20 == 0) {
+                        if (chunkyPreloadElapsedTicks >= 60
+                                && chunkyPreloadElapsedTicks % 20 == 0) {
                             if (isChunkyDone()
                                     || chunkyPreloadElapsedTicks >= chunkyPreloadTimeoutTicks) {
                                 chunkyPreloadInProgress = false;
@@ -696,10 +697,12 @@ public class SwapMod implements ModInitializer {
         try {
             for (ModInitializer entry :
                     FabricLoader.getInstance().getEntrypoints("main", ModInitializer.class)) {
-                if (!entry.getClass().getName().equals("org.popcraft.chunky.ChunkyFabric")) continue;
+                if (!entry.getClass().getName().equals("org.popcraft.chunky.ChunkyFabric"))
+                    continue;
                 Object chunky = entry.getClass().getMethod("getChunky").invoke(entry);
                 Map<?, ?> tasks =
-                        (Map<?, ?>) chunky.getClass().getMethod("getGenerationTasks").invoke(chunky);
+                        (Map<?, ?>)
+                                chunky.getClass().getMethod("getGenerationTasks").invoke(chunky);
                 return tasks.isEmpty();
             }
         } catch (Exception ignored) {
