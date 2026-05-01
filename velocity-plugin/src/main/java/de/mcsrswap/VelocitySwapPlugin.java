@@ -7,6 +7,7 @@ import com.google.inject.Inject;
 import com.velocitypowered.api.command.*;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
+import com.velocitypowered.api.event.connection.PostLoginEvent;
 import com.velocitypowered.api.event.player.PlayerChooseInitialServerEvent;
 import com.velocitypowered.api.event.player.ServerConnectedEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
@@ -15,6 +16,7 @@ import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.*;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
+import com.velocitypowered.api.proxy.server.ServerInfo;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
@@ -40,6 +42,7 @@ public class VelocitySwapPlugin {
     boolean versusMode = false;
     String gameServerPrefix = "game";
     String lobbyServerName = "lobby";
+    String limboServerName = "limbo";
     final VelocityLang lang = new VelocityLang();
     final Set<String> adminPlayers = new HashSet<>();
 
@@ -244,6 +247,7 @@ public class VelocitySwapPlugin {
             // use typed config values
             gameServerPrefix = cfg.gameServerPrefix;
             lobbyServerName = cfg.lobbyServerName;
+            limboServerName = cfg.limboServerName;
             spectateAfterWin = cfg.spectateAfterWin;
             spectateTarget = cfg.spectateTarget;
             saveHotbar = cfg.saveHotbar;
@@ -262,6 +266,25 @@ public class VelocitySwapPlugin {
             if (envLobby != null && !envLobby.isBlank()) {
                 lobbyServerName = envLobby;
                 logger.info("Overriding lobby server name from env: {}", lobbyServerName);
+            }
+
+            // Register limbo with Velocity if not already present in velocity.toml.
+            // In Docker mode the limbo hostname equals limboServerName (Docker DNS) on port 25565.
+            if (server.getServer(limboServerName).isEmpty()) {
+                String limboHost = limboServerName;
+                int limboPort = 25565;
+                try {
+                    java.net.InetSocketAddress limboAddr =
+                            new java.net.InetSocketAddress(limboHost, limboPort);
+                    server.registerServer(new ServerInfo(limboServerName, limboAddr));
+                    logger.info(
+                            "Registered limbo server '{}' at {}:{}",
+                            limboServerName,
+                            limboHost,
+                            limboPort);
+                } catch (Exception e) {
+                    logger.warn("Could not register limbo server '{}': {}", limboServerName, e.getMessage());
+                }
             }
 
             // Load admin list from typed config
@@ -485,7 +508,7 @@ public class VelocitySwapPlugin {
             }
 
             final String nextServer = next;
-            server.getServer(lobbyServerName)
+            server.getServer(getTransitServer())
                     .ifPresent(
                             lobby ->
                                     player.createConnectionRequest(lobby)
@@ -494,12 +517,13 @@ public class VelocitySwapPlugin {
                                                     result -> {
                                                         if (!result.isSuccessful()) {
                                                             logger.warn(
-                                                                    "Failed to route {} to lobby"
-                                                                            + " during rotation",
+                                                                    "Failed to route {} to transit"
+                                                                            + " server during"
+                                                                            + " rotation",
                                                                     player.getUsername());
                                                             return;
                                                         }
-                                                        // Player arrived at lobby; slot .dat was
+                                                        // Player arrived at transit server; slot .dat was
                                                         // written on game-server disconnect.
                                                         // Now forward to next game server.
                                                         forwardFromLobby(player, nextServer);
@@ -641,6 +665,17 @@ public class VelocitySwapPlugin {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Returns the transit server used to buffer players between game servers during rotation.
+     * Uses the limbo server if it is registered with Velocity; falls back to the lobby.
+     */
+    private String getTransitServer() {
+        if (server.getServer(limboServerName).isPresent()) {
+            return limboServerName;
+        }
+        return lobbyServerName;
+    }
+
     /** Returns lobby players who should participate in the next game start. */
     List<Player> getStartParticipants() {
         return getLobbyPlayers().stream()
@@ -730,6 +765,50 @@ public class VelocitySwapPlugin {
     }
 
     // =========================
+    // PLAYER LOGIN
+    // =========================
+
+    @Subscribe
+    public void onPostLogin(PostLoginEvent event) {
+        Player player = event.getPlayer();
+        String name = player.getUsername();
+        String uuidStr = player.getUniqueId().toString();
+        if (!adminPlayers.contains(name) && !adminPlayers.contains(uuidStr)) return;
+
+        server.getScheduler()
+                .buildTask(
+                        this,
+                        () -> {
+                            try {
+                                var lpPlugin = server.getPluginManager().getPlugin("luckperms");
+                                if (lpPlugin.isEmpty()) return;
+                                net.luckperms.api.LuckPerms api =
+                                        net.luckperms.api.LuckPermsProvider.get();
+                                var user =
+                                        api.getUserManager()
+                                                .loadUser(player.getUniqueId())
+                                                .get();
+                                if (user == null) return;
+                                net.luckperms.api.node.Node node =
+                                        net.luckperms.api.node.Node.builder("swap.admin").build();
+                                if (!user.data().contains(node, net.luckperms.api.node.NodeEqualityPredicate.IGNORE_EXPIRY_TIME).asBoolean()) {
+                                    user.data().add(node);
+                                    api.getUserManager().saveUser(user);
+                                    logger.info(
+                                            "Granted swap.admin to {} ({})",
+                                            name,
+                                            player.getUniqueId());
+                                }
+                            } catch (Exception e) {
+                                logger.error(
+                                        "Failed to grant swap.admin to {}: {}", name, e.getMessage());
+                            }
+                        })
+                .delay(1, TimeUnit.SECONDS)
+                .schedule();
+    }
+
+    // =========================
     // MESSAGE
     // =========================
 
@@ -771,7 +850,38 @@ public class VelocitySwapPlugin {
         if (!gameServers.contains(serverName)) {
             UUID uuid = player.getUniqueId();
             if (pendingReconnect.remove(uuid) && playerServer.containsKey(uuid)) {
-                forwardFromLobby(player, playerServer.get(uuid));
+                final String nextServer = playerServer.get(uuid);
+                // Schedule without delay: calling createConnectionRequest() directly from
+                // ServerConnectedEvent causes "already trying to connect" because Velocity's
+                // connection state for the current hop hasn't been fully committed yet.
+                // Yielding to the scheduler (even with no delay) moves execution past the
+                // current event-processing cycle, making it ping-independent.
+                server.getScheduler()
+                        .buildTask(
+                                this,
+                                () ->
+                                        server.getServer(nextServer)
+                                                .ifPresent(
+                                                        s ->
+                                                                player.createConnectionRequest(s)
+                                                                        .connect()
+                                                                        .thenAcceptAsync(
+                                                                                result -> {
+                                                                                    if (!result
+                                                                                            .isSuccessful()) {
+                                                                                        logger.warn(
+                                                                                                "Failed to forward reconnecting player {} to {}",
+                                                                                                player.getUsername(),
+                                                                                                nextServer);
+                                                                                    }
+                                                                                },
+                                                                                runnable ->
+                                                                                        server.getScheduler()
+                                                                                                .buildTask(
+                                                                                                        this,
+                                                                                                        runnable)
+                                                                                                .schedule())))
+                        .schedule();
             }
             return;
         }
@@ -965,7 +1075,7 @@ public class VelocitySwapPlugin {
         if (gameState != GameState.RUNNING) return;
         if (!activePlayers.contains(uuid)) return;
         if (!playerServer.containsKey(uuid)) return;
-        server.getServer(lobbyServerName)
+        server.getServer(getTransitServer())
                 .ifPresent(
                         lobby -> {
                             pendingReconnect.add(uuid);

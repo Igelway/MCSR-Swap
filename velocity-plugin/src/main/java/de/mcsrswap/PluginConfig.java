@@ -18,6 +18,7 @@ public final class PluginConfig {
     private static final String DEFAULT_LANGUAGE = "en_US";
     private static final String DEFAULT_GAME_SERVER_PREFIX = "game";
     private static final String DEFAULT_LOBBY_SERVER_NAME = "lobby";
+    private static final String DEFAULT_LIMBO_SERVER_NAME = "limbo";
     private static final boolean DEFAULT_SPECTATE_AFTER_WIN = true;
     private static final String DEFAULT_SPECTATE_TARGET = "next";
     private static final boolean DEFAULT_SAVE_HOTBAR = true;
@@ -38,6 +39,7 @@ public final class PluginConfig {
     public final String language; // normalized form like en_US
     public final String gameServerPrefix;
     public final String lobbyServerName;
+    public final String limboServerName;
     public final boolean spectateAfterWin;
     public final String spectateTarget;
     public final boolean saveHotbar;
@@ -88,6 +90,7 @@ public final class PluginConfig {
             String language,
             String gameServerPrefix,
             String lobbyServerName,
+            String limboServerName,
             boolean spectateAfterWin,
             String spectateTarget,
             boolean saveHotbar,
@@ -102,6 +105,7 @@ public final class PluginConfig {
         this.language = language;
         this.gameServerPrefix = gameServerPrefix;
         this.lobbyServerName = lobbyServerName;
+        this.limboServerName = limboServerName;
         this.spectateAfterWin = spectateAfterWin;
         this.spectateTarget = spectateTarget;
         this.saveHotbar = saveHotbar;
@@ -138,6 +142,8 @@ public final class PluginConfig {
                 Objects.toString(map.getOrDefault("gameServerPrefix", DEFAULT_GAME_SERVER_PREFIX));
         String lobbyServerName =
                 Objects.toString(map.getOrDefault("lobbyServerName", DEFAULT_LOBBY_SERVER_NAME));
+        String limboServerName =
+                Objects.toString(map.getOrDefault("limboServerName", DEFAULT_LIMBO_SERVER_NAME));
         boolean spectateAfterWin =
                 toBoolean(map.getOrDefault("spectateAfterWin", DEFAULT_SPECTATE_AFTER_WIN));
         String spectateTarget =
@@ -212,6 +218,10 @@ public final class PluginConfig {
         if (envLobby != null && !envLobby.isBlank()) {
             lobbyServerName = envLobby;
         }
+        String envLimbo = System.getenv("MCSRSWAP_LIMBO_ADDRESS");
+        if (envLimbo != null && !envLimbo.isBlank()) {
+            limboServerName = envLimbo;
+        }
         String envImage = System.getenv("MCSRSWAP_GAMESERVER_IMAGE");
         if (envImage != null && !envImage.isBlank()) {
             docker = new Docker(docker.enabled, envImage, docker.network, docker.host, docker.gameDataDir);
@@ -270,6 +280,7 @@ public final class PluginConfig {
                 language,
                 gameServerPrefix,
                 lobbyServerName,
+                limboServerName,
                 spectateAfterWin,
                 spectateTarget,
                 saveHotbar,

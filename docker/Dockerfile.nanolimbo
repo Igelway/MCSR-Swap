@@ -1,0 +1,18 @@
+FROM eclipse-temurin:17-jre-alpine
+
+RUN apk add --no-cache curl
+
+WORKDIR /app
+
+RUN curl -fsSL \
+    "https://github.com/Nan1t/NanoLimbo/releases/download/v1.8.1/NanoLimbo-1.8.1-all.jar" \
+    -o NanoLimbo.jar \
+  && echo "1c0ecf155f9388960a4fd5d4b88d35d7b38935a0ac914617b9554b8b88d756c3  NanoLimbo.jar" \
+    | sha256sum -c -
+
+COPY nanolimbo-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 25565
+
+ENTRYPOINT ["/entrypoint.sh"]
