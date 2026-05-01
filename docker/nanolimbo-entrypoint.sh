@@ -9,9 +9,9 @@ else
     SECRET="${FORWARDING_SECRET:-change_me}"
 fi
 
-mkdir -p /limbo
-
-cat > /limbo/settings.yml << EOF
+# NanoLimbo v1.8.1 always reads settings.yml from the current working
+# directory (hardcoded Paths.get("./")). Write it to /app/ (the WORKDIR).
+cat > /app/settings.yml << EOF
 bind:
   ip: '0.0.0.0'
   port: 25565
@@ -66,4 +66,4 @@ traffic:
   maxPacketRate: 500.0
 EOF
 
-exec java -jar /app/NanoLimbo.jar /limbo
+exec java -jar /app/NanoLimbo.jar
