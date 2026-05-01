@@ -1,7 +1,7 @@
 {
   "id": "mcsrswap",
   "name": "MCSR-Swap",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "main": "de.mcsrswap.VelocitySwapPlugin",
   "authors": ["Igelway"]
 }
