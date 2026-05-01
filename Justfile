@@ -100,10 +100,13 @@ docker-build: build
     fi
     VELOCITY_TAG="${MCSRSWAP_VELOCITY_IMAGE:-mcsr-swap-velocity:latest}"
     GAMESERVER_TAG="${MCSRSWAP_GAMESERVER_IMAGE:-mcsr-swap-gameserver:latest}"
+    LIMBO_TAG="${MCSRSWAP_LIMBO_IMAGE:-mcsr-swap-limbo:latest}"
     echo "Building Velocity image: $VELOCITY_TAG"
     docker build -f docker/Dockerfile.velocity -t "$VELOCITY_TAG" .
     echo "Building Gameserver image: $GAMESERVER_TAG"
     docker build -f docker/Dockerfile.gameserver -t "$GAMESERVER_TAG" .
+    echo "Building Limbo image: $LIMBO_TAG"
+    docker build -f docker/Dockerfile.nanolimbo -t "$LIMBO_TAG" docker/
 
 # Build only Velocity Docker image locally
 docker-build-velocity: build-velocity
@@ -126,6 +129,17 @@ docker-build-gameserver: build-fabric
     TAG="${MCSRSWAP_GAMESERVER_IMAGE:-mcsr-swap-gameserver:latest}"
     echo "Building Gameserver image: $TAG"
     docker build -f docker/Dockerfile.gameserver -t "$TAG" .
+
+# Build only Limbo Docker image locally
+docker-build-limbo:
+    #!/usr/bin/env bash
+    set -e
+    if [ -f .env ]; then
+        source .env
+    fi
+    TAG="${MCSRSWAP_LIMBO_IMAGE:-mcsr-swap-limbo:latest}"
+    echo "Building Limbo image: $TAG"
+    docker build -f docker/Dockerfile.nanolimbo -t "$TAG" docker/
 
 format-java:
     cd fabric-mod && ./gradlew spotlessApply
