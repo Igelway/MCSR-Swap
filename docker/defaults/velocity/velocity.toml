@@ -70,6 +70,7 @@ ping-passthrough = "DISABLED"
 # Configure your servers here. Each key represents the server's name, and the value
 # represents the IP address of the server to connect to.
 lobby = "mcsrswap-lobby:25565"
+limbo = "mcsrswap-limbo:25565"
 
 # In what order we should try servers when a player logs in or is kicked from a server.
 try = ["lobby"]

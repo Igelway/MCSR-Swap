@@ -15,6 +15,7 @@ import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.*;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
+import com.velocitypowered.api.proxy.server.ServerInfo;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
@@ -264,6 +265,25 @@ public class VelocitySwapPlugin {
             if (envLobby != null && !envLobby.isBlank()) {
                 lobbyServerName = envLobby;
                 logger.info("Overriding lobby server name from env: {}", lobbyServerName);
+            }
+
+            // Register limbo with Velocity if not already present in velocity.toml.
+            // In Docker mode the limbo hostname equals limboServerName (Docker DNS) on port 25565.
+            if (server.getServer(limboServerName).isEmpty()) {
+                String limboHost = limboServerName;
+                int limboPort = 25565;
+                try {
+                    java.net.InetSocketAddress limboAddr =
+                            new java.net.InetSocketAddress(limboHost, limboPort);
+                    server.registerServer(new ServerInfo(limboServerName, limboAddr));
+                    logger.info(
+                            "Registered limbo server '{}' at {}:{}",
+                            limboServerName,
+                            limboHost,
+                            limboPort);
+                } catch (Exception e) {
+                    logger.warn("Could not register limbo server '{}': {}", limboServerName, e.getMessage());
+                }
             }
 
             // Load admin list from typed config
