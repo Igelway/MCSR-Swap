@@ -851,12 +851,36 @@ public class VelocitySwapPlugin {
             UUID uuid = player.getUniqueId();
             if (pendingReconnect.remove(uuid) && playerServer.containsKey(uuid)) {
                 final String nextServer = playerServer.get(uuid);
-                // Schedule with a short delay: calling createConnectionRequest() directly
-                // from ServerConnectedEvent causes "already trying to connect" because
-                // Velocity's connection state hasn't fully settled yet.
+                // Schedule without delay: calling createConnectionRequest() directly from
+                // ServerConnectedEvent causes "already trying to connect" because Velocity's
+                // connection state for the current hop hasn't been fully committed yet.
+                // Yielding to the scheduler (even with no delay) moves execution past the
+                // current event-processing cycle, making it ping-independent.
                 server.getScheduler()
-                        .buildTask(this, () -> forwardFromLobby(player, nextServer))
-                        .delay(100, TimeUnit.MILLISECONDS)
+                        .buildTask(
+                                this,
+                                () ->
+                                        server.getServer(nextServer)
+                                                .ifPresent(
+                                                        s ->
+                                                                player.createConnectionRequest(s)
+                                                                        .connect()
+                                                                        .thenAcceptAsync(
+                                                                                result -> {
+                                                                                    if (!result
+                                                                                            .isSuccessful()) {
+                                                                                        logger.warn(
+                                                                                                "Failed to forward reconnecting player {} to {}",
+                                                                                                player.getUsername(),
+                                                                                                nextServer);
+                                                                                    }
+                                                                                },
+                                                                                runnable ->
+                                                                                        server.getScheduler()
+                                                                                                .buildTask(
+                                                                                                        this,
+                                                                                                        runnable)
+                                                                                                .schedule())))
                         .schedule();
             }
             return;
