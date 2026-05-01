@@ -54,11 +54,6 @@ download starlight.jar \
   https://github.com/Minecraft-Java-Edition-Speedrunning/legal-mods/raw/2ba63fc475270404e4a1c1f910f22bdc9bc14186/legal-mods/starlight/1.16-1.16.5/starlight-1.3.0+1.16.x-backport-1.1.3.jar \
   8492378aefe02917a659e82b24c447ab805f08ca79cd584bc3e884ff08864568
 
-echo "Successfully downloaded and verified all mods"
-
-# Carpet (tick-freeze support) and Chunky (preload support) are always
-# included in the image. Carpet only acts when /tick freeze is called;
-# Chunky only runs when /chunky start is issued by the mod at startup.
 download carpet.jar \
   "https://cdn.modrinth.com/data/TQTTVgYE/versions/cI14KY8A/fabric-carpet-1.16.1-1.4.0%2Bv200623_build2.jar" \
   f4b3440067eb44725034aed9751626c834d51577bc3b0a86231a5efd4e102f71
@@ -67,4 +62,4 @@ download chunky.jar \
   "https://cdn.modrinth.com/data/fALzjamp/versions/1.2.54/Chunky-1.2.54.jar" \
   e56a2e4febffce8435b04d602b7d19a13d5fbb2e07504f094a5911d9b40f8ef5
 
-echo "Downloaded Carpet + Chunky"
+echo "Successfully downloaded and verified all mods"
