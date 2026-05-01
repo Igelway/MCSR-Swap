@@ -98,6 +98,14 @@ public class SwapMod implements ModInitializer {
     private boolean chunkyPreloadInProgress = false;
     private int chunkyPreloadElapsedTicks = 0;
 
+    /**
+     * Set when a non-spectator player disconnects. On the next tick the server's player list is
+     * fully updated, so we check whether any active runner remains and freeze if not. (Carpet's
+     * tick-freeze command must run on the server thread via the tick handler; it cannot be called
+     * directly from the disconnect callback.)
+     */
+    private boolean pendingFreezeCheck = false;
+
     /** 10 minutes at 20 ticks/s */
     private final int chunkyPreloadTimeoutTicks = 12000;
 
@@ -266,6 +274,18 @@ public class SwapMod implements ModInitializer {
         // Tick handler: clearRegen, mode detection, periodic save, disconnect cleanup, camera locks
         ServerTickEvents.END_SERVER_TICK.register(
                 srv -> {
+                    // If a survival player just disconnected, freeze once the player list is
+                    // updated (which happens after onDisconnected returns, i.e. on the next tick).
+                    if (pendingFreezeCheck) {
+                        pendingFreezeCheck = false;
+                        if (!hasActiveRunner(srv)) {
+                            frozen = true;
+                            applyCarpetFreeze();
+                        } else {
+                            frozen = false;
+                        }
+                    }
+
                     // Chunky preload poll runs regardless of the game-frozen state.
                     if (chunkyPreloadInProgress) {
                         chunkyPreloadElapsedTicks++;
@@ -402,15 +422,23 @@ public class SwapMod implements ModInitializer {
 
     /**
      * Called by DisconnectMessageMixin before vanilla's disconnect-save. Captures hotbar preference
-     * and records the last survival player UUID for mob-anger inheritance.
+     * and records the last survival player UUID for mob-anger inheritance. Also schedules a
+     * freeze-check for the following tick so Carpet tick-freeze can be applied if no active runner
+     * remains.
      */
     public static void onPlayerDisconnect(ServerPlayerEntity player) {
         if (INSTANCE == null) return;
         if (player.interactionManager.getGameMode() == GameMode.SPECTATOR) return;
-        if (player.getHealth() <= 0.0f) return;
-        StateManager sm = INSTANCE.stateManager;
-        if (sm.saveHotbar) sm.captureHotbarPreference(player);
-        sm.lastPlayerUuid = player.getUuid();
+        // State capture: only for living survival players.
+        if (player.getHealth() > 0.0f) {
+            StateManager sm = INSTANCE.stateManager;
+            if (sm.saveHotbar) sm.captureHotbarPreference(player);
+            sm.lastPlayerUuid = player.getUuid();
+        }
+        // Freeze check: schedule regardless of health so a dead/broken-state runner
+        // cannot leave the server permanently unfrozen.
+        INSTANCE.frozen = true;
+        INSTANCE.pendingFreezeCheck = true;
     }
 
     private void onPlayerExitEnd(ServerPlayerEntity player) {
@@ -460,6 +488,19 @@ public class SwapMod implements ModInitializer {
             }
         }
         return null;
+    }
+
+    /** Returns true if {@code p} is a living, non-spectator runner. */
+    private boolean isActiveRunner(ServerPlayerEntity p) {
+        return p.interactionManager.getGameMode() == GameMode.SURVIVAL && p.getHealth() > 0.0f;
+    }
+
+    /** Returns true if at least one active runner is currently on this server. */
+    private boolean hasActiveRunner(MinecraftServer srv) {
+        for (ServerPlayerEntity p : srv.getPlayerManager().getPlayerList()) {
+            if (isActiveRunner(p)) return true;
+        }
+        return false;
     }
 
     private void handleMessage(byte[] bytes) {
