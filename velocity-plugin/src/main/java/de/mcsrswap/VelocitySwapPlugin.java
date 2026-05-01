@@ -850,7 +850,14 @@ public class VelocitySwapPlugin {
         if (!gameServers.contains(serverName)) {
             UUID uuid = player.getUniqueId();
             if (pendingReconnect.remove(uuid) && playerServer.containsKey(uuid)) {
-                forwardFromLobby(player, playerServer.get(uuid));
+                final String nextServer = playerServer.get(uuid);
+                // Schedule with a short delay: calling createConnectionRequest() directly
+                // from ServerConnectedEvent causes "already trying to connect" because
+                // Velocity's connection state hasn't fully settled yet.
+                server.getScheduler()
+                        .buildTask(this, () -> forwardFromLobby(player, nextServer))
+                        .delay(100, TimeUnit.MILLISECONDS)
+                        .schedule();
             }
             return;
         }

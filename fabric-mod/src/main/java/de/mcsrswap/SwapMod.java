@@ -440,6 +440,7 @@ public class SwapMod implements ModInitializer {
         }
         // Freeze check: schedule regardless of health so a dead/broken-state runner
         // cannot leave the server permanently unfrozen.
+        INSTANCE.connectedPlayers.remove(player.getUuid());
         INSTANCE.frozen = true;
         INSTANCE.pendingFreezeCheck = true;
     }
