@@ -641,10 +641,10 @@ public class SwapMod implements ModInitializer {
         carpetFrozen = true;
     }
 
-    /** Releases Carpet tick-freeze when it is currently active. */
+    /** Releases Carpet tick-freeze by toggling /tick freeze again. */
     private void applyCarpetUnfreeze() {
         if (!carpetFrozen || !carpetPresent) return;
-        server.getCommandManager().execute(server.getCommandSource(), "tick unfreeze");
+        server.getCommandManager().execute(server.getCommandSource(), "tick freeze");
         carpetFrozen = false;
     }
 
