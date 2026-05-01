@@ -7,6 +7,7 @@ import com.google.inject.Inject;
 import com.velocitypowered.api.command.*;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
+import com.velocitypowered.api.event.connection.PostLoginEvent;
 import com.velocitypowered.api.event.player.PlayerChooseInitialServerEvent;
 import com.velocitypowered.api.event.player.ServerConnectedEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
@@ -761,6 +762,50 @@ public class VelocitySwapPlugin {
         for (Player player : getGameParticipants()) {
             sendToBackend(player, buildMessage(out -> out.writeUTF("reset")));
         }
+    }
+
+    // =========================
+    // PLAYER LOGIN
+    // =========================
+
+    @Subscribe
+    public void onPostLogin(PostLoginEvent event) {
+        Player player = event.getPlayer();
+        String name = player.getUsername();
+        String uuidStr = player.getUniqueId().toString();
+        if (!adminPlayers.contains(name) && !adminPlayers.contains(uuidStr)) return;
+
+        server.getScheduler()
+                .buildTask(
+                        this,
+                        () -> {
+                            try {
+                                var lpPlugin = server.getPluginManager().getPlugin("luckperms");
+                                if (lpPlugin.isEmpty()) return;
+                                net.luckperms.api.LuckPerms api =
+                                        net.luckperms.api.LuckPermsProvider.get();
+                                var user =
+                                        api.getUserManager()
+                                                .loadUser(player.getUniqueId())
+                                                .get();
+                                if (user == null) return;
+                                net.luckperms.api.node.Node node =
+                                        net.luckperms.api.node.Node.builder("swap.admin").build();
+                                if (!user.data().contains(node, net.luckperms.api.node.NodeEqualityPredicate.IGNORE_EXPIRY_TIME).asBoolean()) {
+                                    user.data().add(node);
+                                    api.getUserManager().saveUser(user);
+                                    logger.info(
+                                            "Granted swap.admin to {} ({})",
+                                            name,
+                                            player.getUniqueId());
+                                }
+                            } catch (Exception e) {
+                                logger.error(
+                                        "Failed to grant swap.admin to {}: {}", name, e.getMessage());
+                            }
+                        })
+                .delay(1, TimeUnit.SECONDS)
+                .schedule();
     }
 
     // =========================
