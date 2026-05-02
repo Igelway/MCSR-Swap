@@ -105,6 +105,18 @@ public class VelocitySwapPlugin {
     /** Servers that have sent a "ready" signal after startup. */
     final Set<String> readyServers = new HashSet<>();
 
+    /**
+     * Players who have clicked "Yes" in the ready-check prompt (populated during READY_CHECK).
+     * Cleared when entering or leaving READY_CHECK.
+     */
+    final Set<UUID> readyConfirmed = new HashSet<>();
+
+    /**
+     * Ordered list of participant UUIDs at the time the ready-check was started. Used to determine
+     * when all players have confirmed. Cleared alongside {@link #readyConfirmed}.
+     */
+    final List<UUID> readyCheckParticipants = new ArrayList<>();
+
     public Logger getLogger() {
         return logger;
     }
@@ -1093,6 +1105,7 @@ public class VelocitySwapPlugin {
         final List<String> ADMIN_SUBS =
                 Arrays.asList(
                         "start",
+                        "prepare",
                         "stop",
                         "forceswap",
                         "setrotation",
@@ -1103,7 +1116,7 @@ public class VelocitySwapPlugin {
                         "player",
                         "seed",
                         "cleanup");
-        final List<String> PLAYER_SUBS = Arrays.asList("jointeam", "ignore");
+        final List<String> PLAYER_SUBS = Arrays.asList("jointeam", "ignore", "ready");
         final List<String> ALL_SUBS;
         {
             List<String> tmp = new ArrayList<>(ADMIN_SUBS);
@@ -1127,6 +1140,12 @@ public class VelocitySwapPlugin {
                         switch (sub) {
                             case "start":
                                 commands.cmdStart(src, rest);
+                                break;
+                            case "prepare":
+                                commands.cmdPrepare(src, rest);
+                                break;
+                            case "ready":
+                                commands.cmdReady(src, rest);
                                 break;
                             case "stop":
                                 commands.cmdStop(src, rest);
@@ -1199,6 +1218,15 @@ public class VelocitySwapPlugin {
                             } else if (state == GameState.STARTING) {
                                 // Containers starting – almost nothing useful
                                 subs.retainAll(Arrays.asList("stop", "state", "player", "seed"));
+                            } else if (state == GameState.PREPARING) {
+                                // /ms prepare in progress – can stop or clean up
+                                subs.retainAll(
+                                        Arrays.asList("stop", "cleanup", "state", "player"));
+                            } else if (state == GameState.READY_CHECK) {
+                                // Waiting for players – admin can force-start, players can ready up
+                                subs.retainAll(
+                                        Arrays.asList(
+                                                "start", "cleanup", "state", "player", "ready"));
                             } else {
                                 // LOBBY – pre-game config; remove runtime-only commands
                                 subs.removeAll(Arrays.asList("forceswap"));
@@ -1214,7 +1242,8 @@ public class VelocitySwapPlugin {
                         // Only admins get argument suggestions for admin-only subcommands.
                         if (!admin
                                 && !sub.equals("jointeam")
-                                && !sub.equals("ignore")) {
+                                && !sub.equals("ignore")
+                                && !sub.equals("ready")) {
                             return Collections.emptyList();
                         }
 
@@ -1338,6 +1367,18 @@ public class VelocitySwapPlugin {
             logger.error("Cannot start game: no game servers detected. Check your config.");
             return;
         }
+        launchGame();
+    }
+
+    /**
+     * Assigns participants to servers, connects them, sets up the timer, and transitions to
+     * {@link GameState#RUNNING}. May be called from {@link #startGameInternal()} (normal start or
+     * Docker immediate) or directly from the READY_CHECK → RUNNING transition.
+     * Requires {@link #gameServers} to be non-empty.
+     */
+    void launchGame() {
+        readyConfirmed.clear();
+        readyCheckParticipants.clear();
 
         List<Player> players = new ArrayList<>(getStartParticipants());
 
@@ -1452,6 +1493,105 @@ public class VelocitySwapPlugin {
         logger.info("Game started!");
         for (Player p : getGameParticipants()) {
             p.sendMessage(Component.text(lang.get("game_started")));
+        }
+    }
+
+    /**
+     * Transitions to {@link GameState#READY_CHECK}. Stores current participants and sends each a
+     * clickable "Bereit? [Ja]" prompt. Called after all servers are healthy (Docker or manual).
+     */
+    void enterReadyCheck() {
+        gameState = GameState.READY_CHECK;
+        readyConfirmed.clear();
+        readyCheckParticipants.clear();
+        List<Player> participants = getStartParticipants();
+        for (Player p : participants) {
+            readyCheckParticipants.add(p.getUniqueId());
+        }
+        for (Player p : participants) {
+            sendReadyCheckPrompt(p);
+        }
+        logger.info("Ready check started for {} players.", readyCheckParticipants.size());
+    }
+
+    /** Sends the clickable ready-check prompt to a single player. */
+    void sendReadyCheckPrompt(Player p) {
+        net.kyori.adventure.text.Component yesButton =
+                net.kyori.adventure.text.Component.text(
+                                "[" + lang.get("ready_yes") + "]")
+                        .color(net.kyori.adventure.text.format.NamedTextColor.GREEN)
+                        .clickEvent(
+                                net.kyori.adventure.text.event.ClickEvent.runCommand("/ms ready"))
+                        .hoverEvent(
+                                net.kyori.adventure.text.event.HoverEvent.showText(
+                                        net.kyori.adventure.text.Component.text(
+                                                lang.get("ready_yes"))));
+        net.kyori.adventure.text.Component msg =
+                net.kyori.adventure.text.Component.text(lang.get("ready_check_prompt") + " ")
+                        .append(yesButton);
+        p.sendMessage(msg);
+    }
+
+    /**
+     * Marks a player as ready. If all participants have confirmed, launches the game immediately.
+     * Safe to call from any thread.
+     */
+    void confirmReady(Player player) {
+        if (gameState != GameState.READY_CHECK) return;
+        if (readyCheckParticipants.isEmpty()) return; // already started or cancelled
+        UUID uuid = player.getUniqueId();
+        if (!readyCheckParticipants.contains(uuid)) {
+            player.sendMessage(
+                    net.kyori.adventure.text.Component.text(lang.get("ready_already")));
+            return;
+        }
+        if (!readyConfirmed.add(uuid)) {
+            player.sendMessage(
+                    net.kyori.adventure.text.Component.text(lang.get("ready_already")));
+            return;
+        }
+        int count = readyConfirmed.size();
+        int total = readyCheckParticipants.size();
+        String msg =
+                lang.get(
+                        "ready_player_ready",
+                        "player", player.getUsername(),
+                        "count", String.valueOf(count),
+                        "total", String.valueOf(total));
+        for (Player p : server.getAllPlayers()) {
+            p.sendMessage(net.kyori.adventure.text.Component.text(msg));
+        }
+        if (count >= total) {
+            for (Player p : server.getAllPlayers()) {
+                p.sendMessage(
+                        net.kyori.adventure.text.Component.text(lang.get("ready_all_ready")));
+            }
+            launchGame();
+        }
+    }
+
+    /** Admin override: immediately launches the game regardless of ready confirmations. */
+    void forceStartFromReadyCheck() {
+        if (gameState != GameState.READY_CHECK) return;
+        for (Player p : server.getAllPlayers()) {
+            p.sendMessage(net.kyori.adventure.text.Component.text(lang.get("ready_forced")));
+        }
+        launchGame();
+    }
+
+    /**
+     * Cancels an in-progress PREPARING or READY_CHECK phase, resetting state to LOBBY.
+     * Does NOT perform Docker cleanup — callers should call {@link WorldSwapCommands#cmdCleanup}
+     * separately.
+     */
+    void cancelPrepare() {
+        if (gameState != GameState.PREPARING && gameState != GameState.READY_CHECK) return;
+        gameState = GameState.LOBBY;
+        readyConfirmed.clear();
+        readyCheckParticipants.clear();
+        for (Player p : server.getAllPlayers()) {
+            p.sendMessage(
+                    net.kyori.adventure.text.Component.text(lang.get("ready_check_cancelled")));
         }
     }
 

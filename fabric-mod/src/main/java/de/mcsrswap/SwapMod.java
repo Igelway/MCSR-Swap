@@ -227,7 +227,7 @@ public class SwapMod implements ModInitializer {
                     // Incoming watcher: skip survival processing. Defer the actual mode switch to
                     // the next tick so it lands after sendWorldInfo (which would override it).
                     if (pendingSpectators.contains(player.getUuid())) {
-                        deferredSpectatorSwitch.put(player.getUuid(), 10);
+                        deferredSpectatorSwitch.put(player.getUuid(), 5);
                         return;
                     }
 
@@ -307,32 +307,41 @@ public class SwapMod implements ModInitializer {
                     stateManager.tickClearRegen(srv);
 
                     // Apply deferred spectator switches (scheduled in ENTITY_LOAD).
-                    // Re-sends spectator packets every tick for 10 ticks to guarantee they arrive
-                    // after sendWorldInfo. Cleans itself up when the countdown reaches 0.
+                    // Countdown starts at 5. Game mode is set on tick 5 (first tick). Spectator
+                    // packets are resent only at ticks 5, 3, and 1 — enough redundancy without
+                    // flooding the connection every single tick.
                     if (!deferredSpectatorSwitch.isEmpty()) {
-                        for (UUID uuid : new ArrayList<>(deferredSpectatorSwitch.keySet())) {
+                        var iter = deferredSpectatorSwitch.entrySet().iterator();
+                        while (iter.hasNext()) {
+                            var entry = iter.next();
+                            UUID uuid = entry.getKey();
+                            int remaining = entry.getValue();
                             ServerPlayerEntity watcher = srv.getPlayerManager().getPlayer(uuid);
-                            if (watcher == null) continue;
-                            int remaining = deferredSpectatorSwitch.get(uuid);
-                            if (remaining == 10) {
+                            if (watcher == null) {
+                                iter.remove();
+                                continue;
+                            }
+                            if (remaining == 5) {
                                 watcher.interactionManager.setGameMode(
                                         GameMode.SPECTATOR,
                                         watcher.interactionManager.getGameMode());
                             }
-                            UUID targetUuid = spectatorCameras.get(uuid);
-                            ServerPlayerEntity toWatch =
-                                    targetUuid != null
-                                            ? srv.getPlayerManager().getPlayer(targetUuid)
-                                            : null;
-                            if (toWatch == null) toWatch = findActiveSurvivalPlayer(srv, uuid);
-                            forceSpectatorPackets(watcher, toWatch);
-                            if (toWatch != null) spectatorCameras.put(uuid, toWatch.getUuid());
+                            if (remaining == 5 || remaining == 3 || remaining == 1) {
+                                UUID targetUuid = spectatorCameras.get(uuid);
+                                ServerPlayerEntity toWatch =
+                                        targetUuid != null
+                                                ? srv.getPlayerManager().getPlayer(targetUuid)
+                                                : null;
+                                if (toWatch == null) toWatch = findActiveSurvivalPlayer(srv, uuid);
+                                forceSpectatorPackets(watcher, toWatch);
+                                if (toWatch != null) spectatorCameras.put(uuid, toWatch.getUuid());
+                            }
                             remaining--;
                             if (remaining <= 0) {
                                 pendingSpectators.remove(uuid);
-                                deferredSpectatorSwitch.remove(uuid);
+                                iter.remove();
                             } else {
-                                deferredSpectatorSwitch.put(uuid, remaining);
+                                entry.setValue(remaining);
                             }
                         }
                     }
