@@ -496,7 +496,8 @@ public class SwapMod implements ModInitializer {
 
     /** Returns true if {@code p} is a living, non-spectator runner. */
     private boolean isActiveRunner(ServerPlayerEntity p) {
-        return p.interactionManager.getGameMode() == GameMode.SURVIVAL && p.getHealth() > 0.0f;
+        // A player on the death screen is still connected and should keep the server running.
+        return p.interactionManager.getGameMode() == GameMode.SURVIVAL;
     }
 
     /** Returns true if at least one active runner is currently on this server. */
@@ -646,15 +647,25 @@ public class SwapMod implements ModInitializer {
     /** Applies Carpet tick-freeze when Carpet is present and not already frozen. */
     private void applyCarpetFreeze() {
         if (carpetFrozen || !carpetPresent || chunkyPreloadInProgress) return;
-        server.getCommandManager().execute(server.getCommandSource(), "tick freeze");
+        setCarpetPaused(true);
         carpetFrozen = true;
     }
 
-    /** Releases Carpet tick-freeze by toggling /tick freeze again. */
+    /** Releases Carpet tick-freeze. */
     private void applyCarpetUnfreeze() {
         if (!carpetFrozen || !carpetPresent) return;
-        server.getCommandManager().execute(server.getCommandSource(), "tick freeze");
+        setCarpetPaused(false);
         carpetFrozen = false;
+    }
+
+    /**
+     * Directly sets {@code carpet.helpers.TickSpeed.is_paused} via reflection.
+     * Direct assignment is deterministic unlike the toggle-based {@code /tick freeze} command.
+     */
+    private static void setCarpetPaused(boolean paused) {
+        try {
+            Class.forName("carpet.helpers.TickSpeed").getField("is_paused").set(null, paused);
+        } catch (ReflectiveOperationException ignored) {}
     }
 
     /**
