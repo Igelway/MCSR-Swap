@@ -8,7 +8,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -668,13 +667,14 @@ public class SwapMod implements ModInitializer {
     }
 
     /**
-     * Directly sets {@code carpet.helpers.TickSpeed.is_paused} via reflection.
-     * Direct assignment is deterministic unlike the toggle-based {@code /tick freeze} command.
+     * Directly sets {@code carpet.helpers.TickSpeed.is_paused} via reflection. Direct assignment is
+     * deterministic unlike the toggle-based {@code /tick freeze} command.
      */
     private static void setCarpetPaused(boolean paused) {
         try {
             Class.forName("carpet.helpers.TickSpeed").getField("is_paused").set(null, paused);
-        } catch (ReflectiveOperationException ignored) {}
+        } catch (ReflectiveOperationException ignored) {
+        }
     }
 
     /**
