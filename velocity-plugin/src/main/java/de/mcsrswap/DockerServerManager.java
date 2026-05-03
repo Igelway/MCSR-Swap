@@ -5,7 +5,6 @@ import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
-import java.util.Objects;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
@@ -407,7 +406,7 @@ public class DockerServerManager {
                                 "EULA=" + eulaValue,
                                 "ONLINE_MODE=FALSE",
                                 "SERVER_PORT=25565",
-                                "MEMORY=2G",
+                                "MEMORY=1500M",
                                 "TYPE=FABRIC",
                                 "VERSION=1.16.1",
                                 "FABRIC_PROXY_VELOCITY=true",
@@ -448,7 +447,7 @@ public class DockerServerManager {
                         .withHostConfig(
                                 HostConfig.newHostConfig()
                                         .withNetworkMode(networkName)
-                                        .withMemory(2147483648L)
+                                        .withMemory(3221225472L)
                                          .withMounts(List.of(new Mount()
                                                 .withType(MountType.BIND)
                                                 .withSource(hostServerDataPath)
