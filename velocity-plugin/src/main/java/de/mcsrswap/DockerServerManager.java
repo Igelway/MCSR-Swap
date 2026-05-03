@@ -406,7 +406,7 @@ public class DockerServerManager {
                                 "EULA=" + eulaValue,
                                 "ONLINE_MODE=FALSE",
                                 "SERVER_PORT=25565",
-                                "MEMORY=1500M",
+                                "MEMORY=2G",
                                 "TYPE=FABRIC",
                                 "VERSION=1.16.1",
                                 "FABRIC_PROXY_VELOCITY=true",
