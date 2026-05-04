@@ -19,11 +19,13 @@ import com.velocitypowered.api.proxy.server.RegisteredServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
 import java.io.IOException;
 import java.nio.file.*;
+import java.time.Duration;
 import java.util.*;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.title.Title;
 import org.slf4j.Logger;
 import org.yaml.snakeyaml.Yaml;
 
@@ -116,6 +118,9 @@ public class VelocitySwapPlugin {
      * when all players have confirmed. Cleared alongside {@link #readyConfirmed}.
      */
     final List<UUID> readyCheckParticipants = new ArrayList<>();
+
+    /** Guards against double-triggering the pre-game countdown. */
+    volatile boolean countdownRunning = false;
 
     public Logger getLogger() {
         return logger;
@@ -1254,6 +1259,17 @@ public class VelocitySwapPlugin {
                                             Collections.singletonList("--clean"), partial);
                                 break;
 
+                            case "prepare":
+                                if (args.length == 2) {
+                                    // Suggest the current participant count as a convenience hint.
+                                    int hint = getStartParticipants().size();
+                                    if (hint > 0)
+                                        return filterPrefix(
+                                                Collections.singletonList(String.valueOf(hint)),
+                                                partial);
+                                }
+                                break;
+
                             case "setteam":
                                 if (args.length == 2) return teamArgs(partial);
                                 if (args.length >= 3) return onlinePlayers(partial);
@@ -1367,7 +1383,12 @@ public class VelocitySwapPlugin {
             logger.error("Cannot start game: no game servers detected. Check your config.");
             return;
         }
-        launchGame();
+        // Ensure a non-LOBBY state so the countdown guard works even for manual-mode starts
+        // (Docker mode already sets STARTING before this is reached).
+        if (gameState == GameState.LOBBY) {
+            gameState = GameState.STARTING;
+        }
+        scheduleCountdownThenLaunch();
     }
 
     /**
@@ -1566,7 +1587,7 @@ public class VelocitySwapPlugin {
                 p.sendMessage(
                         net.kyori.adventure.text.Component.text(lang.get("ready_all_ready")));
             }
-            launchGame();
+            scheduleCountdownThenLaunch();
         }
     }
 
@@ -1576,16 +1597,18 @@ public class VelocitySwapPlugin {
         for (Player p : server.getAllPlayers()) {
             p.sendMessage(net.kyori.adventure.text.Component.text(lang.get("ready_forced")));
         }
-        launchGame();
+        scheduleCountdownThenLaunch();
     }
 
     /**
      * Cancels an in-progress PREPARING or READY_CHECK phase, resetting state to LOBBY.
+     * Also aborts any pending countdown (the countdown lambda checks for LOBBY state).
      * Does NOT perform Docker cleanup — callers should call {@link WorldSwapCommands#cmdCleanup}
      * separately.
      */
     void cancelPrepare() {
         if (gameState != GameState.PREPARING && gameState != GameState.READY_CHECK) return;
+        countdownRunning = false;
         gameState = GameState.LOBBY;
         readyConfirmed.clear();
         readyCheckParticipants.clear();
@@ -1593,6 +1616,49 @@ public class VelocitySwapPlugin {
             p.sendMessage(
                     net.kyori.adventure.text.Component.text(lang.get("ready_check_cancelled")));
         }
+    }
+
+    /**
+     * Shows a 3-2-1 title countdown to all players, then calls {@link #launchGame()}.
+     * Idempotent: if a countdown is already in progress this call is a no-op.
+     * The launch is aborted if the game state returns to LOBBY before the countdown ends
+     * (e.g. because an admin ran /ms stop or /ms cleanup during the 3-second window).
+     */
+    void scheduleCountdownThenLaunch() {
+        if (countdownRunning) return;
+        countdownRunning = true;
+
+        Title.Times times =
+                Title.Times.of(Duration.ZERO, Duration.ofMillis(800), Duration.ofMillis(300));
+        for (int i = 3; i >= 1; i--) {
+            final long delaySec = 3 - i;
+            final Title title =
+                    Title.title(
+                            Component.text("§a" + i),
+                            Component.empty(),
+                            times);
+            server.getScheduler()
+                    .buildTask(
+                            this,
+                            () -> {
+                                for (Player p : server.getAllPlayers()) {
+                                    p.showTitle(title);
+                                }
+                            })
+                    .delay(delaySec, TimeUnit.SECONDS)
+                    .schedule();
+        }
+
+        server.getScheduler()
+                .buildTask(
+                        this,
+                        () -> {
+                            countdownRunning = false;
+                            if (gameState == GameState.LOBBY) return; // cancelled
+                            launchGame();
+                        })
+                .delay(3, TimeUnit.SECONDS)
+                .schedule();
     }
 
     /** Distributes players across servers; excess players are sent to the lobby. */
