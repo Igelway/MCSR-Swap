@@ -374,45 +374,14 @@ public class WorldSwapCommands {
     }
 
     /**
-     * Validates that there are enough playable participants for the requested number of servers.
+     * Validates that server count is compatible with versus mode constraints.
+     * Does NOT check that serverCount <= participants.size() — prepare is designed to
+     * pre-generate servers before all players arrive.
      * Returns an error string, or {@code null} if the configuration is valid.
      */
-    private String validatePlayerCountForServers(List<Player> participants, int serverCount) {
-        if (participants.isEmpty()) {
-            return "§cNo playable players found.";
-        }
-        if (!plugin.versusMode) {
-            if (serverCount > participants.size()) {
-                return "§cCannot prepare "
-                        + serverCount
-                        + " servers: only "
-                        + participants.size()
-                        + " playable player(s) available.";
-            }
-        } else {
-            if (serverCount % 2 != 0) {
-                return "§cVersus mode requires an even server count (got " + serverCount + ").";
-            }
-            int perTeam = serverCount / 2;
-            long teamA =
-                    participants.stream()
-                            .filter(p -> "a".equals(plugin.playerTeam.get(p.getUniqueId())))
-                            .count();
-            long teamB =
-                    participants.stream()
-                            .filter(p -> "b".equals(plugin.playerTeam.get(p.getUniqueId())))
-                            .count();
-            if (teamA > perTeam || teamB > perTeam) {
-                return "§cCannot prepare "
-                        + serverCount
-                        + " servers: team sizes "
-                        + teamA
-                        + "/"
-                        + teamB
-                        + " exceed "
-                        + perTeam
-                        + " slots per team.";
-            }
+    private String validatePlayerCountForServers(int serverCount) {
+        if (plugin.versusMode && serverCount % 2 != 0) {
+            return "§cVersus mode requires an even server count (got " + serverCount + ").";
         }
         return null;
     }
@@ -441,16 +410,13 @@ public class WorldSwapCommands {
             return;
         }
 
-        List<Player> participants = plugin.getStartParticipants();
-
         // Parse optional explicit server count.
         int serverCount;
         if (args.length > 0) {
             try {
                 serverCount = Integer.parseInt(args[0]);
             } catch (NumberFormatException e) {
-                src.sendMessage(
-                        Component.text("§cInvalid server count: §e" + args[0]));
+                src.sendMessage(Component.text("§cInvalid server count: §e" + args[0]));
                 return;
             }
             if (serverCount < 1) {
@@ -458,26 +424,27 @@ public class WorldSwapCommands {
                 return;
             }
         } else {
+            List<Player> participants = plugin.getStartParticipants();
             if (participants.isEmpty()) {
-                src.sendMessage(Component.text("§cNo playable players found."));
+                src.sendMessage(
+                        Component.text(
+                                "§cNo playable players found. Either specify a count (§e/ms"
+                                        + " prepare <N>§c) or wait for players to join."));
                 return;
             }
             serverCount = participants.size();
         }
 
-        // Validate player count vs requested server count.
-        String countError = validatePlayerCountForServers(participants, serverCount);
+        // Validate server count (only versus-even constraint applies at prepare time).
+        String countError = validatePlayerCountForServers(serverCount);
         if (countError != null) {
             src.sendMessage(Component.text(countError));
             return;
         }
 
-        // Validate versus-mode team assignments.
-        String validationError = validateStartConfiguration(participants);
-        if (validationError != null) {
-            src.sendMessage(Component.text(validationError));
-            return;
-        }
+        // Note: team-assignment validation (versus mode) is intentionally deferred to
+        // launch time — the purpose of /ms prepare is to pre-generate servers before all
+        // players have arrived, so participant lists may not be complete yet.
 
         // Docker mode: cleanup any old containers first, then spawn fresh ones.
         src.sendMessage(Component.text("§7Cleaning up old containers and volumes..."));
