@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 1. Version bestimmen
+# 1. Determine version
 VERSION="${1:-}"
 if [ -z "$VERSION" ]; then
     CURRENT=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
@@ -9,7 +9,7 @@ if [ -z "$VERSION" ]; then
 fi
 echo "🚀 Target Version: v$VERSION"
 
-# 2. Dateien aktualisieren (Quell-Dateien)
+# 2. update files
 echo "→ Patching files..."
 # Maven
 [ -f "pom.xml" ] && sed -i "0,/<version>.*<\/version>/s/<version>.*<\/version>/<version>$VERSION<\/version>/" pom.xml
@@ -20,16 +20,13 @@ echo "→ Patching files..."
 [ -f "fabric-mod/src/main/resources/fabric.mod.json" ] && sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" fabric-mod/src/main/resources/fabric.mod.json
 [ -f "velocity-plugin/src/main/resources/velocity-plugin.json" ] && sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" velocity-plugin/src/main/resources/velocity-plugin.json
 
-# Readmes (flexiblerer Regex für vX.Y.Z oder X.Y.Z)
+# Readmes
 sed -i "s/fabric-mod-v*[0-9.]*\.jar/fabric-mod-$VERSION.jar/g" README.md README-CLASSIC.md 2>/dev/null || true
 sed -i "s/velocity-plugin-v*[0-9.]*\.jar/velocity-plugin-$VERSION.jar/g" README.md README-CLASSIC.md 2>/dev/null || true
 
-# 3. Cleanup & Build (Optional, aber empfohlen)
-# Hier könntest du mvn clean oder gradlew clean einfügen
-
-# 4. Git Operationen
+# 3. Git operations
 echo "→ Committing and Pushing..."
-# Wir fügen alles hinzu, was wir geändert haben, aber KEIN bin/ oder build/
+
 git add README.md README-CLASSIC.md fabric-mod/build.gradle fabric-mod/src/main/resources/fabric.mod.json \
         velocity-plugin/pom.xml velocity-plugin/src/main/resources/velocity-plugin.json 
 [ -f "pom.xml" ] && git add pom.xml
@@ -41,4 +38,4 @@ echo "→ Tagging..."
 git tag -a "v$VERSION" -m "Release v$VERSION"
 git push origin "v$VERSION"
 
-echo "✅ Successfully released v$VERSION to GitHub!"
+echo "$VERSION"
