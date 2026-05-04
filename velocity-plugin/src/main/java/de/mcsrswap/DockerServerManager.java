@@ -5,7 +5,6 @@ import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
-import java.util.Objects;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
@@ -448,7 +447,7 @@ public class DockerServerManager {
                         .withHostConfig(
                                 HostConfig.newHostConfig()
                                         .withNetworkMode(networkName)
-                                        .withMemory(2147483648L)
+                                        .withMemory(3221225472L)
                                          .withMounts(List.of(new Mount()
                                                 .withType(MountType.BIND)
                                                 .withSource(hostServerDataPath)

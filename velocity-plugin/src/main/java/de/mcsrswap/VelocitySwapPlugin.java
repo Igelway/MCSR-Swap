@@ -19,11 +19,13 @@ import com.velocitypowered.api.proxy.server.RegisteredServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
 import java.io.IOException;
 import java.nio.file.*;
+import java.time.Duration;
 import java.util.*;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.title.Title;
 import org.slf4j.Logger;
 import org.yaml.snakeyaml.Yaml;
 
@@ -104,6 +106,21 @@ public class VelocitySwapPlugin {
 
     /** Servers that have sent a "ready" signal after startup. */
     final Set<String> readyServers = new HashSet<>();
+
+    /**
+     * Players who have clicked "Yes" in the ready-check prompt (populated during READY_CHECK).
+     * Cleared when entering or leaving READY_CHECK.
+     */
+    final Set<UUID> readyConfirmed = new HashSet<>();
+
+    /**
+     * Ordered list of participant UUIDs at the time the ready-check was started. Used to determine
+     * when all players have confirmed. Cleared alongside {@link #readyConfirmed}.
+     */
+    final List<UUID> readyCheckParticipants = new ArrayList<>();
+
+    /** Guards against double-triggering the pre-game countdown. */
+    volatile boolean countdownRunning = false;
 
     public Logger getLogger() {
         return logger;
@@ -1093,6 +1110,7 @@ public class VelocitySwapPlugin {
         final List<String> ADMIN_SUBS =
                 Arrays.asList(
                         "start",
+                        "prepare",
                         "stop",
                         "forceswap",
                         "setrotation",
@@ -1103,7 +1121,7 @@ public class VelocitySwapPlugin {
                         "player",
                         "seed",
                         "cleanup");
-        final List<String> PLAYER_SUBS = Arrays.asList("jointeam", "ignore");
+        final List<String> PLAYER_SUBS = Arrays.asList("jointeam", "ignore", "ready");
         final List<String> ALL_SUBS;
         {
             List<String> tmp = new ArrayList<>(ADMIN_SUBS);
@@ -1127,6 +1145,12 @@ public class VelocitySwapPlugin {
                         switch (sub) {
                             case "start":
                                 commands.cmdStart(src, rest);
+                                break;
+                            case "prepare":
+                                commands.cmdPrepare(src, rest);
+                                break;
+                            case "ready":
+                                commands.cmdReady(src, rest);
                                 break;
                             case "stop":
                                 commands.cmdStop(src, rest);
@@ -1199,6 +1223,15 @@ public class VelocitySwapPlugin {
                             } else if (state == GameState.STARTING) {
                                 // Containers starting – almost nothing useful
                                 subs.retainAll(Arrays.asList("stop", "state", "player", "seed"));
+                            } else if (state == GameState.PREPARING) {
+                                // /ms prepare in progress – can stop or clean up
+                                subs.retainAll(
+                                        Arrays.asList("stop", "cleanup", "state", "player"));
+                            } else if (state == GameState.READY_CHECK) {
+                                // Waiting for players – admin can force-start, players can ready up
+                                subs.retainAll(
+                                        Arrays.asList(
+                                                "start", "cleanup", "state", "player", "ready"));
                             } else {
                                 // LOBBY – pre-game config; remove runtime-only commands
                                 subs.removeAll(Arrays.asList("forceswap"));
@@ -1214,7 +1247,8 @@ public class VelocitySwapPlugin {
                         // Only admins get argument suggestions for admin-only subcommands.
                         if (!admin
                                 && !sub.equals("jointeam")
-                                && !sub.equals("ignore")) {
+                                && !sub.equals("ignore")
+                                && !sub.equals("ready")) {
                             return Collections.emptyList();
                         }
 
@@ -1223,6 +1257,17 @@ public class VelocitySwapPlugin {
                                 if (args.length == 2)
                                     return filterPrefix(
                                             Collections.singletonList("--clean"), partial);
+                                break;
+
+                            case "prepare":
+                                if (args.length == 2) {
+                                    // Suggest the current participant count as a convenience hint.
+                                    int hint = getStartParticipants().size();
+                                    if (hint > 0)
+                                        return filterPrefix(
+                                                Collections.singletonList(String.valueOf(hint)),
+                                                partial);
+                                }
                                 break;
 
                             case "setteam":
@@ -1338,6 +1383,23 @@ public class VelocitySwapPlugin {
             logger.error("Cannot start game: no game servers detected. Check your config.");
             return;
         }
+        // Ensure a non-LOBBY state so the countdown guard works even for manual-mode starts
+        // (Docker mode already sets STARTING before this is reached).
+        if (gameState == GameState.LOBBY) {
+            gameState = GameState.STARTING;
+        }
+        scheduleCountdownThenLaunch();
+    }
+
+    /**
+     * Assigns participants to servers, connects them, sets up the timer, and transitions to
+     * {@link GameState#RUNNING}. May be called from {@link #startGameInternal()} (normal start or
+     * Docker immediate) or directly from the READY_CHECK → RUNNING transition.
+     * Requires {@link #gameServers} to be non-empty.
+     */
+    void launchGame() {
+        readyConfirmed.clear();
+        readyCheckParticipants.clear();
 
         List<Player> players = new ArrayList<>(getStartParticipants());
 
@@ -1453,6 +1515,150 @@ public class VelocitySwapPlugin {
         for (Player p : getGameParticipants()) {
             p.sendMessage(Component.text(lang.get("game_started")));
         }
+    }
+
+    /**
+     * Transitions to {@link GameState#READY_CHECK}. Stores current participants and sends each a
+     * clickable "Bereit? [Ja]" prompt. Called after all servers are healthy (Docker or manual).
+     */
+    void enterReadyCheck() {
+        gameState = GameState.READY_CHECK;
+        readyConfirmed.clear();
+        readyCheckParticipants.clear();
+        List<Player> participants = getStartParticipants();
+        for (Player p : participants) {
+            readyCheckParticipants.add(p.getUniqueId());
+        }
+        for (Player p : participants) {
+            sendReadyCheckPrompt(p);
+        }
+        logger.info("Ready check started for {} players.", readyCheckParticipants.size());
+    }
+
+    /** Sends the clickable ready-check prompt to a single player. */
+    void sendReadyCheckPrompt(Player p) {
+        net.kyori.adventure.text.Component yesButton =
+                net.kyori.adventure.text.Component.text(
+                                "[" + lang.get("ready_yes") + "]")
+                        .color(net.kyori.adventure.text.format.NamedTextColor.GREEN)
+                        .clickEvent(
+                                net.kyori.adventure.text.event.ClickEvent.runCommand("/ms ready"))
+                        .hoverEvent(
+                                net.kyori.adventure.text.event.HoverEvent.showText(
+                                        net.kyori.adventure.text.Component.text(
+                                                lang.get("ready_yes"))));
+        net.kyori.adventure.text.Component msg =
+                net.kyori.adventure.text.Component.text(lang.get("ready_check_prompt") + " ")
+                        .append(yesButton);
+        p.sendMessage(msg);
+    }
+
+    /**
+     * Marks a player as ready. If all participants have confirmed, launches the game immediately.
+     * Safe to call from any thread.
+     */
+    void confirmReady(Player player) {
+        if (gameState != GameState.READY_CHECK) return;
+        if (readyCheckParticipants.isEmpty()) return; // already started or cancelled
+        UUID uuid = player.getUniqueId();
+        if (!readyCheckParticipants.contains(uuid)) {
+            player.sendMessage(
+                    net.kyori.adventure.text.Component.text(lang.get("ready_already")));
+            return;
+        }
+        if (!readyConfirmed.add(uuid)) {
+            player.sendMessage(
+                    net.kyori.adventure.text.Component.text(lang.get("ready_already")));
+            return;
+        }
+        int count = readyConfirmed.size();
+        int total = readyCheckParticipants.size();
+        String msg =
+                lang.get(
+                        "ready_player_ready",
+                        "player", player.getUsername(),
+                        "count", String.valueOf(count),
+                        "total", String.valueOf(total));
+        for (Player p : server.getAllPlayers()) {
+            p.sendMessage(net.kyori.adventure.text.Component.text(msg));
+        }
+        if (count >= total) {
+            for (Player p : server.getAllPlayers()) {
+                p.sendMessage(
+                        net.kyori.adventure.text.Component.text(lang.get("ready_all_ready")));
+            }
+            scheduleCountdownThenLaunch();
+        }
+    }
+
+    /** Admin override: immediately launches the game regardless of ready confirmations. */
+    void forceStartFromReadyCheck() {
+        if (gameState != GameState.READY_CHECK) return;
+        for (Player p : server.getAllPlayers()) {
+            p.sendMessage(net.kyori.adventure.text.Component.text(lang.get("ready_forced")));
+        }
+        scheduleCountdownThenLaunch();
+    }
+
+    /**
+     * Cancels an in-progress PREPARING or READY_CHECK phase, resetting state to LOBBY.
+     * Also aborts any pending countdown (the countdown lambda checks for LOBBY state).
+     * Does NOT perform Docker cleanup — callers should call {@link WorldSwapCommands#cmdCleanup}
+     * separately.
+     */
+    void cancelPrepare() {
+        if (gameState != GameState.PREPARING && gameState != GameState.READY_CHECK) return;
+        countdownRunning = false;
+        gameState = GameState.LOBBY;
+        readyConfirmed.clear();
+        readyCheckParticipants.clear();
+        for (Player p : server.getAllPlayers()) {
+            p.sendMessage(
+                    net.kyori.adventure.text.Component.text(lang.get("ready_check_cancelled")));
+        }
+    }
+
+    /**
+     * Shows a 3-2-1 title countdown to all players, then calls {@link #launchGame()}.
+     * Idempotent: if a countdown is already in progress this call is a no-op.
+     * The launch is aborted if the game state returns to LOBBY before the countdown ends
+     * (e.g. because an admin ran /ms stop or /ms cleanup during the 3-second window).
+     */
+    void scheduleCountdownThenLaunch() {
+        if (countdownRunning) return;
+        countdownRunning = true;
+
+        Title.Times times =
+                Title.Times.of(Duration.ZERO, Duration.ofMillis(800), Duration.ofMillis(300));
+        for (int i = 3; i >= 1; i--) {
+            final long delaySec = 3 - i;
+            final Title title =
+                    Title.title(
+                            Component.text("§a" + i),
+                            Component.empty(),
+                            times);
+            server.getScheduler()
+                    .buildTask(
+                            this,
+                            () -> {
+                                for (Player p : server.getAllPlayers()) {
+                                    p.showTitle(title);
+                                }
+                            })
+                    .delay(delaySec, TimeUnit.SECONDS)
+                    .schedule();
+        }
+
+        server.getScheduler()
+                .buildTask(
+                        this,
+                        () -> {
+                            countdownRunning = false;
+                            if (gameState == GameState.LOBBY) return; // cancelled
+                            launchGame();
+                        })
+                .delay(3, TimeUnit.SECONDS)
+                .schedule();
     }
 
     /** Distributes players across servers; excess players are sent to the lobby. */

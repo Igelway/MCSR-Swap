@@ -131,11 +131,16 @@ public class WorldSwapCommands {
             src.sendMessage(Component.text("§7/ms setteamname <a|b> <name>"));
             src.sendMessage(Component.text("§7/ms setversus <true|false> §8| §7/ms state §8| §7/ms player"));
             if (docker) {
+                src.sendMessage(
+                        Component.text(
+                                "§7/ms prepare [N] §8- §7Pre-generate N servers (default: player"
+                                        + " count), then ready check"));
                 src.sendMessage(Component.text("§7/ms cleanup §8- §7Stop Docker containers"));
                 src.sendMessage(Component.text("§7/ms seed [<i> [<val>|clear] | <s1,s2,...>]"));
             }
         }
         src.sendMessage(Component.text("§7/ms jointeam <a|b>"));
+        src.sendMessage(Component.text("§7/ms ready §8- §7Confirm readiness during ready check"));
         src.sendMessage(Component.text("§7/ms ignore [player] §8- §7Opt out of the next game start"));
     }
 
@@ -144,12 +149,22 @@ public class WorldSwapCommands {
             src.sendMessage(Component.text("§cNo permission!"));
             return;
         }
+        // Admin override during ready check: force-start immediately.
+        if (plugin.gameState == GameState.READY_CHECK) {
+            plugin.forceStartFromReadyCheck();
+            return;
+        }
         if (plugin.gameState == GameState.RUNNING) {
             src.sendMessage(Component.text("§cGame is already running!"));
             return;
         }
         if (plugin.gameState == GameState.STARTING) {
             src.sendMessage(Component.text("§cGame is already starting, please wait..."));
+            return;
+        }
+        if (plugin.gameState == GameState.PREPARING) {
+            src.sendMessage(
+                    Component.text("§cServers are being prepared. Wait or use §e/ms cleanup§c."));
             return;
         }
 
@@ -288,8 +303,10 @@ public class WorldSwapCommands {
             src.sendMessage(Component.text("§cNo game is running!"));
             return;
         }
-        if (plugin.gameState == GameState.STARTING) {
+        if (plugin.gameState == GameState.STARTING
+                || plugin.gameState == GameState.PREPARING) {
             plugin.gameState = GameState.LOBBY;
+            plugin.countdownRunning = false; // abort any pending countdown
             src.sendMessage(Component.text("§7Cancelling startup…"));
             if (plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
                 boolean removeData = plugin.startedWithClean;
@@ -335,6 +352,11 @@ public class WorldSwapCommands {
             src.sendMessage(Component.text("§cGame is still running! Use §e/ms stop§c first."));
             return;
         }
+        // Cancel any in-progress prepare/ready-check before cleaning up.
+        if (plugin.gameState == GameState.PREPARING
+                || plugin.gameState == GameState.READY_CHECK) {
+            plugin.cancelPrepare();
+        }
         if (plugin.dockerManager == null || !plugin.dockerManager.isDockerEnabled()) {
             src.sendMessage(Component.text("§cDocker mode is not enabled."));
             return;
@@ -349,6 +371,134 @@ public class WorldSwapCommands {
             src.sendMessage(Component.text("§cCleanup failed. Check logs for details."));
             plugin.getLogger().error("Cleanup failed", e);
         }
+    }
+
+    /**
+     * Validates that server count is compatible with versus mode constraints.
+     * Does NOT check that serverCount <= participants.size() — prepare is designed to
+     * pre-generate servers before all players arrive.
+     * Returns an error string, or {@code null} if the configuration is valid.
+     */
+    private String validatePlayerCountForServers(int serverCount) {
+        if (plugin.versusMode && serverCount % 2 != 0) {
+            return "§cVersus mode requires an even server count (got " + serverCount + ").";
+        }
+        return null;
+    }
+
+    /**
+     * /ms prepare [N] — pre-generates N game servers (Docker only) and then asks all participants
+     * if they are ready. If N is omitted, defaults to the current participant count.
+     */
+    void cmdPrepare(CommandSource src, String[] args) {
+        if (!isAdmin(src)) {
+            src.sendMessage(Component.text("§cNo permission!"));
+            return;
+        }
+        if (plugin.dockerManager == null || !plugin.dockerManager.isDockerEnabled()) {
+            src.sendMessage(
+                    Component.text(
+                            "§c/ms prepare requires Docker mode. In manual mode use §e/ms start§c"
+                                    + " directly."));
+            return;
+        }
+        if (plugin.gameState != GameState.LOBBY) {
+            src.sendMessage(
+                    Component.text(
+                            "§c/ms prepare can only be used from the lobby. Current state: "
+                                    + plugin.gameState));
+            return;
+        }
+
+        // Parse optional explicit server count.
+        int serverCount;
+        if (args.length > 0) {
+            try {
+                serverCount = Integer.parseInt(args[0]);
+            } catch (NumberFormatException e) {
+                src.sendMessage(Component.text("§cInvalid server count: §e" + args[0]));
+                return;
+            }
+            if (serverCount < 1) {
+                src.sendMessage(Component.text("§cServer count must be at least 1."));
+                return;
+            }
+        } else {
+            List<Player> participants = plugin.getStartParticipants();
+            if (participants.isEmpty()) {
+                src.sendMessage(
+                        Component.text(
+                                "§cNo playable players found. Either specify a count (§e/ms"
+                                        + " prepare <N>§c) or wait for players to join."));
+                return;
+            }
+            serverCount = participants.size();
+        }
+
+        // Validate server count (only versus-even constraint applies at prepare time).
+        String countError = validatePlayerCountForServers(serverCount);
+        if (countError != null) {
+            src.sendMessage(Component.text(countError));
+            return;
+        }
+
+        // Note: team-assignment validation (versus mode) is intentionally deferred to
+        // launch time — the purpose of /ms prepare is to pre-generate servers before all
+        // players have arrived, so participant lists may not be complete yet.
+
+        // Docker mode: cleanup any old containers first, then spawn fresh ones.
+        src.sendMessage(Component.text("§7Cleaning up old containers and volumes..."));
+        try {
+            plugin.dockerManager.stopAllServers();
+            plugin.dockerManager.removeAllData();
+        } catch (Exception e) {
+            plugin.getLogger().warn("Cleanup before prepare failed (continuing)", e);
+        }
+
+        final int count = serverCount;
+        plugin.gameState = GameState.PREPARING;
+        src.sendMessage(
+                Component.text(
+                        "§7Starting " + count + " Docker container(s) for pre-generation…"));
+        plugin.dockerManager
+                .startServersAsync(count)
+                .thenAccept(
+                        startedServers -> {
+                            if (plugin.gameState != GameState.PREPARING) return;
+                            if (startedServers.isEmpty()) {
+                                src.sendMessage(
+                                        Component.text("§cFailed to start Docker containers!"));
+                                plugin.gameState = GameState.LOBBY;
+                                return;
+                            }
+                            plugin.gameServers = startedServers;
+                            src.sendMessage(
+                                    Component.text(
+                                            "§aAll servers ready. Waiting for players to"
+                                                    + " confirm…"));
+                            plugin.enterReadyCheck();
+                        })
+                .exceptionally(
+                        ex -> {
+                            src.sendMessage(
+                                    Component.text(
+                                            "§cError starting containers: " + ex.getMessage()));
+                            plugin.gameState = GameState.LOBBY;
+                            return null;
+                        });
+    }
+
+    /** /ms ready — player confirms readiness during a READY_CHECK phase. */
+    void cmdReady(CommandSource src, String[] args) {
+        if (!(src instanceof Player)) {
+            src.sendMessage(Component.text("§cThis command can only be used by players."));
+            return;
+        }
+        if (plugin.gameState != GameState.READY_CHECK) {
+            src.sendMessage(Component.text("§cNo ready check is in progress."));
+            return;
+        }
+        plugin.confirmReady((Player) src);
     }
 
     void cmdForceSwap(CommandSource src, String[] args) {
@@ -810,6 +960,14 @@ public class WorldSwapCommands {
         src.sendMessage(Component.text("§7Finished Servers: §f" + plugin.finishedServers));
         src.sendMessage(Component.text("§7Current Time: §f" + plugin.currentTime + "s"));
         src.sendMessage(Component.text("§7Rotation Time: §f" + plugin.rotationTime + "s"));
+        if (plugin.gameState == GameState.READY_CHECK) {
+            src.sendMessage(
+                    Component.text(
+                            "§7Ready: §f"
+                                    + plugin.readyConfirmed.size()
+                                    + "/"
+                                    + plugin.readyCheckParticipants.size()));
+        }
         if (plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
             src.sendMessage(
                     Component.text(
