@@ -1,51 +1,44 @@
 #!/usr/bin/env bash
-# Bumps version across all project files and creates a git tag.
-# Usage: release.sh [version]  (e.g. release.sh 1.2.3 — omit to auto-increment patch)
 set -euo pipefail
 
+# 1. Version bestimmen
 VERSION="${1:-}"
-
 if [ -z "$VERSION" ]; then
     CURRENT=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
     VERSION=$(echo "$CURRENT" | sed 's/^v//' | awk -F. '{print $1"."$2"."$3+1}')
-    echo "→ Auto-incrementing from $CURRENT to v$VERSION" >&2
-else
-    if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-].+)?$ ]]; then
-        echo "Error: version must be in format X.Y.Z or X.Y.Z-suffix (got: $VERSION)" >&2
-        exit 1
-    fi
-    echo "→ Setting version to v$VERSION" >&2
 fi
+echo "🚀 Target Version: v$VERSION"
 
-echo "→ Updating pom.xml..." >&2
-sed -i "0,/<version>.*<\/version>/s/<version>.*<\/version>/<version>$VERSION<\/version>/" pom.xml
+# 2. Dateien aktualisieren (Quell-Dateien)
+echo "→ Patching files..."
+# Maven
+[ -f "pom.xml" ] && sed -i "0,/<version>.*<\/version>/s/<version>.*<\/version>/<version>$VERSION<\/version>/" pom.xml
+[ -f "velocity-plugin/pom.xml" ] && sed -i "0,/<version>.*<\/version>/s/<version>.*<\/version>/<version>$VERSION<\/version>/" velocity-plugin/pom.xml
 
-echo "→ Updating velocity-plugin/pom.xml..." >&2
-sed -i "0,/<version>.*<\/version>/s/<version>.*<\/version>/<version>$VERSION<\/version>/" velocity-plugin/pom.xml
+# Gradle & JSONs
+[ -f "fabric-mod/build.gradle" ] && sed -i "s/^version = .*/version = '$VERSION'/" fabric-mod/build.gradle
+[ -f "fabric-mod/src/main/resources/fabric.mod.json" ] && sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" fabric-mod/src/main/resources/fabric.mod.json
+[ -f "velocity-plugin/src/main/resources/velocity-plugin.json" ] && sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" velocity-plugin/src/main/resources/velocity-plugin.json
 
-echo "→ Updating fabric-mod/build.gradle..." >&2
-sed -i "s/^version = .*/version = '$VERSION'/" fabric-mod/build.gradle
+# Readmes (flexiblerer Regex für vX.Y.Z oder X.Y.Z)
+sed -i "s/fabric-mod-v*[0-9.]*\.jar/fabric-mod-$VERSION.jar/g" README.md README-CLASSIC.md 2>/dev/null || true
+sed -i "s/velocity-plugin-v*[0-9.]*\.jar/velocity-plugin-$VERSION.jar/g" README.md README-CLASSIC.md 2>/dev/null || true
 
-echo "→ Updating fabric-mod/src/main/resources/fabric.mod.json..." >&2
-sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" fabric-mod/src/main/resources/fabric.mod.json
+# 3. Cleanup & Build (Optional, aber empfohlen)
+# Hier könntest du mvn clean oder gradlew clean einfügen
 
-echo "→ Updating fabric-mod/bin/main/fabric.mod.json..." >&2
-sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" fabric-mod/bin/main/fabric.mod.json 2>/dev/null || true
+# 4. Git Operationen
+echo "→ Committing and Pushing..."
+# Wir fügen alles hinzu, was wir geändert haben, aber KEIN bin/ oder build/
+git add README.md README-CLASSIC.md fabric-mod/build.gradle fabric-mod/src/main/resources/fabric.mod.json \
+        velocity-plugin/pom.xml velocity-plugin/src/main/resources/velocity-plugin.json 
+[ -f "pom.xml" ] && git add pom.xml
 
-echo "→ Updating velocity-plugin/src/main/resources/velocity-plugin.json..." >&2
-sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" velocity-plugin/src/main/resources/velocity-plugin.json
+git commit -m "chore: bump version to $VERSION"
+git push origin main
 
-echo "→ Updating README.md..." >&2
-sed -i "s/mcsrswap-fabric-mod-v[0-9.]*\.jar/mcsrswap-fabric-mod-v$VERSION.jar/g" README.md
-sed -i "s/mcsrswap-velocity-plugin-v[0-9.]*\.jar/mcsrswap-velocity-plugin-v$VERSION.jar/g" README.md
+echo "→ Tagging..."
+git tag -a "v$VERSION" -m "Release v$VERSION"
+git push origin "v$VERSION"
 
-echo "→ Committing and tagging..." >&2
-git add pom.xml velocity-plugin/pom.xml fabric-mod/build.gradle \
-    fabric-mod/src/main/resources/fabric.mod.json \
-    fabric-mod/bin/main/fabric.mod.json \
-    velocity-plugin/src/main/resources/velocity-plugin.json \
-    README.md 2>/dev/null || true
-git commit --allow-empty -m "chore: bump version to $VERSION" || true
-git tag "v$VERSION"
-
-echo "$VERSION"
+echo "✅ Successfully released v$VERSION to GitHub!"

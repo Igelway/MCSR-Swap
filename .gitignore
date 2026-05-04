@@ -16,6 +16,10 @@ target/
 .project
 .settings/
 
+# VS Code / Eclipse Java Binaries
+bin/
+**/bin/
+
 # Eclipse
 .classpath
 .factorypath
