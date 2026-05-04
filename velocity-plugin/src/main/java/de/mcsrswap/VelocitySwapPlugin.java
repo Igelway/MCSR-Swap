@@ -1515,6 +1515,32 @@ public class VelocitySwapPlugin {
         for (Player p : getGameParticipants()) {
             p.sendMessage(Component.text(lang.get("game_started")));
         }
+
+        // In Docker mode: stop the lobby container once all players have left it.
+        if (dockerManager != null && dockerManager.isDockerEnabled()) {
+            server.getScheduler()
+                    .buildTask(
+                            this,
+                            () -> {
+                                if (gameState != GameState.RUNNING) return;
+                                boolean lobbyEmpty =
+                                        server.getServer(lobbyServerName)
+                                                .map(
+                                                        rs ->
+                                                                rs.getPlayersConnected()
+                                                                        .isEmpty())
+                                                .orElse(true);
+                                if (lobbyEmpty) {
+                                    dockerManager.stopLobbyContainer();
+                                } else {
+                                    logger.debug(
+                                            "Lobby still has players after game start –"
+                                                    + " not stopping lobby container");
+                                }
+                            })
+                    .delay(15, TimeUnit.SECONDS)
+                    .schedule();
+        }
     }
 
     /**
@@ -1720,14 +1746,61 @@ public class VelocitySwapPlugin {
                                 }
                             });
             player.sendMessage(Component.text(lang.get("game_finished")));
-            sendToLobby(player);
         }
         activePlayers.clear();
         pendingReconnect.clear();
+
+        if (dockerManager != null && dockerManager.isDockerEnabled()) {
+            // Lobby may be stopped — send players to transit (limbo) first, then start the
+            // lobby container and move them there once it's ready.
+            for (Player player : participants) {
+                sendToTransit(player);
+            }
+            dockerManager
+                    .startLobbyContainerAsync()
+                    .thenAccept(
+                            ok -> {
+                                if (!ok) {
+                                    logger.error(
+                                            "Lobby container failed to start — players will"
+                                                    + " remain in limbo");
+                                    return;
+                                }
+                                // Extra grace period for Minecraft to accept connections.
+                                server.getScheduler()
+                                        .buildTask(
+                                                this,
+                                                () -> {
+                                                    for (Player p : server.getAllPlayers()) {
+                                                        p.getCurrentServer()
+                                                                .filter(
+                                                                        cs ->
+                                                                                cs.getServerInfo()
+                                                                                        .getName()
+                                                                                        .equals(
+                                                                                                limboServerName))
+                                                                .ifPresent(
+                                                                        cs -> sendToLobby(p));
+                                                    }
+                                                })
+                                        .delay(10, TimeUnit.SECONDS)
+                                        .schedule();
+                            });
+        } else {
+            for (Player player : participants) {
+                sendToLobby(player);
+            }
+        }
     }
 
     private void sendToLobby(Player player) {
         server.getServer(lobbyServerName)
+                .ifPresent(s -> player.createConnectionRequest(s).fireAndForget());
+    }
+
+    /** Sends a player to the transit server (limbo if registered, otherwise lobby). */
+    private void sendToTransit(Player player) {
+        server.getServer(getTransitServer())
                 .ifPresent(s -> player.createConnectionRequest(s).fireAndForget());
     }
 

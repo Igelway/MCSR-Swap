@@ -688,6 +688,109 @@ public class DockerServerManager {
         return new HashMap<>(serverContainers);
     }
 
+    /**
+     * Gracefully stops the lobby container. No-op if Docker is disabled or the container is
+     * already stopped.
+     */
+    public void stopLobbyContainer() {
+        if (!dockerEnabled) return;
+        String containerName = "mcsrswap-" + plugin.lobbyServerName;
+        try {
+            var containers =
+                    dockerClient
+                            .listContainersCmd()
+                            .withNameFilter(Collections.singletonList(containerName))
+                            .exec();
+            if (containers.isEmpty()) {
+                logger.debug("Lobby container {} not found or already stopped", containerName);
+                return;
+            }
+            dockerClient.stopContainerCmd(containerName).withTimeout(30).exec();
+            logger.info("Stopped lobby container: {}", containerName);
+        } catch (Exception e) {
+            logger.warn("Failed to stop lobby container {}: {}", containerName, e.getMessage());
+        }
+    }
+
+    /**
+     * Starts the lobby container and returns a future that completes {@code true} when the
+     * container is healthy (or running if no healthcheck is defined), or {@code false} on timeout.
+     * Times out after 120 seconds.
+     */
+    public java.util.concurrent.CompletableFuture<Boolean> startLobbyContainerAsync() {
+        if (!dockerEnabled) {
+            return java.util.concurrent.CompletableFuture.completedFuture(false);
+        }
+        String containerName = "mcsrswap-" + plugin.lobbyServerName;
+        try {
+            dockerClient.startContainerCmd(containerName).exec();
+            logger.info("Starting lobby container: {}", containerName);
+        } catch (Exception e) {
+            logger.error(
+                    "Failed to start lobby container {}: {}", containerName, e.getMessage());
+            return java.util.concurrent.CompletableFuture.completedFuture(false);
+        }
+
+        java.util.concurrent.CompletableFuture<Boolean> future =
+                new java.util.concurrent.CompletableFuture<>();
+        final int maxAttempts = 60; // 60 × 2 s = 120 s
+        final int[] attempt = {0};
+
+        server.getScheduler()
+                .buildTask(
+                        plugin,
+                        new Runnable() {
+                            @Override
+                            public void run() {
+                                attempt[0]++;
+                                try {
+                                    var inspect =
+                                            dockerClient
+                                                    .inspectContainerCmd(containerName)
+                                                    .exec();
+                                    var state = inspect.getState();
+                                    var health = state.getHealth();
+                                    boolean ready =
+                                            health != null
+                                                    ? "healthy".equals(health.getStatus())
+                                                    : Boolean.TRUE.equals(state.getRunning());
+                                    if (ready) {
+                                        logger.info(
+                                                "Lobby container {} is ready", containerName);
+                                        future.complete(true);
+                                        return;
+                                    }
+                                    logger.debug(
+                                            "Lobby container {} not ready yet (attempt {}/{})",
+                                            containerName,
+                                            attempt[0],
+                                            maxAttempts);
+                                } catch (Exception e) {
+                                    logger.warn(
+                                            "Failed to inspect lobby container {}: {}",
+                                            containerName,
+                                            e.getMessage());
+                                }
+                                if (attempt[0] >= maxAttempts) {
+                                    logger.error(
+                                            "Timeout waiting for lobby container {} to become"
+                                                    + " ready",
+                                            containerName);
+                                    future.complete(false);
+                                    return;
+                                }
+                                server.getScheduler()
+                                        .buildTask(plugin, this)
+                                        .delay(2, TimeUnit.SECONDS)
+                                        .schedule();
+                            }
+                        })
+                .delay(2, TimeUnit.SECONDS)
+                .schedule();
+
+        return future;
+    }
+
     public void cleanup() {
         if (dockerEnabled && dockerClient != null) {
             try {
