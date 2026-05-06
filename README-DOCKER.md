@@ -34,7 +34,7 @@ Copy `.env.example` to `.env` and adjust as needed. All variables are optional u
 | Variable | Default | Description |
 |---|---|---|
 | `MINECRAFT_SERVER_EULA` | – | **Required.** Set to `true` to accept the [Minecraft EULA](https://aka.ms/MinecraftEULA). `just up` will prompt for this automatically. |
-| `VELOCITY_ONLINE_MODE` | `true` | Mojang authentication. Set to `false` for LAN / offline play. |
+| `VELOCITY_ONLINE_MODE` | `true` | Mojang authentication. |
 | `MCSRSWAP_ADMINS` | – | Comma-separated list of admin UUIDs or usernames. Extends the `admins` list in `config.yml`. |
 | `MCSRSWAP_IGNORE_PLAYERS` | – | Comma-separated UUIDs or usernames to exclude from game starts by default. |
 
