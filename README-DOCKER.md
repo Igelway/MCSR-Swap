@@ -14,7 +14,7 @@
    cp .env.example .env
    ```
    If `.env` does not exist, `just up` / `just setup-env` will create it from `.env.example` automatically.
-   See [`.env` Variables](env-variables.md) for examples how to customize the gameservers and velocity settings.
+   See [`.env` Variables](env-variables.md) for examples how to customize the gameserver and velocity settings.
 
 2. **Start the services** (generates `.forwarding.secret` automatically if not present and asks for Minecraft EULA acceptance if needed):
    ```bash
