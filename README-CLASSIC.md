@@ -27,7 +27,7 @@ Recommended mods (optional but advised):
 - Voyager – fixes a rare ConcurrentModificationException (CME) when running Java 11 or above (affects 1.14+)
 - antigone – fixes a rare 1.16.1 server deadlock caused by a strider spawning during chunk generation with a zombified piglin baby chicken jockey as a passenger, creating a chunk-generation dependency loop
 - Chunky – pre-generates chunks, quickly, efficiently, and safely
-- Carpet - used by mcsrswap to freeze tickspeed before players join server and during swaps
+- Carpet - used by MCSR-Swap to freeze tickspeed before players join server and during swaps
 
 > Many of these mods only exist as backports or are maintained specifically for the speedrunning community. **[mods.tildejustin.dev](https://mods.tildejustin.dev/)** is the canonical source for 1.16.1 speedrunning mods.
 
