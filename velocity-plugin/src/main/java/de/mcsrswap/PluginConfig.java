@@ -58,13 +58,54 @@ public final class PluginConfig {
         public final String host;
         /** Host-side absolute path for game server data directories (bind-mounted into game containers). */
         public final String gameDataDir;
+        /**
+         * When {@code true}, the lobby container is stopped once a game starts and restarted when the
+         * game ends. Controlled by {@code docker.autoStopLobby: true} or the env variable
+         * {@code MCSRSWAP_AUTO_STOP_LOBBY=true}. Default: {@code false}.
+         */
+        public final boolean autoStopLobby;
+        /**
+         * Externally-hosted game servers (on other machines) included in the game rotation alongside
+         * Docker-managed containers. These are registered with Velocity at startup and included in
+         * the readiness ping-check. Configured via {@code docker.externalServers} in config.yml or
+         * {@code MCSRSWAP_EXTERNAL_SERVERS=name:host:port,...} in the environment.
+         */
+        public final List<ExternalServer> externalServers;
 
-        public Docker(boolean enabled, String image, String network, String host, String gameDataDir) {
+        /** A game server that runs outside Docker (e.g. on another physical host). */
+        public static final class ExternalServer {
+            public final String name;
+            public final String host;
+            public final int port;
+
+            public ExternalServer(String name, String host, int port) {
+                this.name = name;
+                this.host = host;
+                this.port = port;
+            }
+
+            @Override
+            public String toString() {
+                return name + ":" + host + ":" + port;
+            }
+        }
+
+        public Docker(
+                boolean enabled,
+                String image,
+                String network,
+                String host,
+                String gameDataDir,
+                boolean autoStopLobby,
+                List<ExternalServer> externalServers) {
             this.enabled = enabled;
             this.image = image;
             this.network = network;
             this.host = host;
             this.gameDataDir = gameDataDir;
+            this.autoStopLobby = autoStopLobby;
+            this.externalServers =
+                    externalServers == null ? List.of() : List.copyOf(externalServers);
         }
 
         @Override
@@ -79,6 +120,10 @@ public final class PluginConfig {
                     + host
                     + "', gameDataDir='"
                     + gameDataDir
+                    + "', autoStopLobby="
+                    + autoStopLobby
+                    + ", externalServers="
+                    + externalServers
                     + "'}";
         }
     }
@@ -190,27 +235,46 @@ public final class PluginConfig {
         else if (map.get("dockerConfig") instanceof Map)
             dockerMap = (Map<String, Object>) map.get("dockerConfig");
 
-        Docker docker =
-                new Docker(
-                        DEFAULT_DOCKER_ENABLED,
-                        DEFAULT_DOCKER_IMAGE,
-                        DEFAULT_DOCKER_NETWORK,
-                        DEFAULT_DOCKER_HOST,
-                        DEFAULT_DOCKER_GAME_DATA_DIR);
+        // Collect docker config into mutable locals so env overrides can be applied cleanly.
+        boolean dockerEnabled = DEFAULT_DOCKER_ENABLED;
+        String dockerImage = DEFAULT_DOCKER_IMAGE;
+        String dockerNetwork = DEFAULT_DOCKER_NETWORK;
+        String dockerHost = DEFAULT_DOCKER_HOST;
+        String dockerGameDataDir = DEFAULT_DOCKER_GAME_DATA_DIR;
+        boolean dockerAutoStopLobby = false;
+        List<Docker.ExternalServer> dockerExternalServers = new ArrayList<>();
+
         if (dockerMap != null) {
-            boolean enabled = toBoolean(dockerMap.getOrDefault("enabled", DEFAULT_DOCKER_ENABLED));
-            String image = Objects.toString(dockerMap.getOrDefault("image", DEFAULT_DOCKER_IMAGE));
-            String network =
+            dockerEnabled = toBoolean(dockerMap.getOrDefault("enabled", DEFAULT_DOCKER_ENABLED));
+            dockerImage =
+                    Objects.toString(dockerMap.getOrDefault("image", DEFAULT_DOCKER_IMAGE));
+            dockerNetwork =
                     Objects.toString(dockerMap.getOrDefault("network", DEFAULT_DOCKER_NETWORK));
-            String host =
-                    dockerMap.containsKey("host")
-                            ? Objects.toString(dockerMap.get("host"))
-                            : DEFAULT_DOCKER_HOST;
-            String gameDataDir =
-                    dockerMap.containsKey("gameDataDir")
-                            ? Objects.toString(dockerMap.get("gameDataDir"))
-                            : DEFAULT_DOCKER_GAME_DATA_DIR;
-            docker = new Docker(enabled, image, network, host, gameDataDir);
+            if (dockerMap.containsKey("host"))
+                dockerHost = Objects.toString(dockerMap.get("host"));
+            if (dockerMap.containsKey("gameDataDir"))
+                dockerGameDataDir = Objects.toString(dockerMap.get("gameDataDir"));
+            dockerAutoStopLobby =
+                    toBoolean(dockerMap.getOrDefault("autoStopLobby", false));
+            Object extObj = dockerMap.get("externalServers");
+            if (extObj instanceof List) {
+                for (Object entry : (List<?>) extObj) {
+                    if (entry instanceof Map) {
+                        Map<?, ?> em = (Map<?, ?>) entry;
+                        String extName = Objects.toString(em.get("name"), "").trim();
+                        String extHost = Objects.toString(em.get("host"), "").trim();
+                        int extPort = 25565;
+                        Object portObj = em.get("port");
+                        if (portObj != null) {
+                            extPort = toInt(portObj, 25565);
+                        }
+                        if (!extName.isEmpty() && !extHost.isEmpty()) {
+                            dockerExternalServers.add(
+                                    new Docker.ExternalServer(extName, extHost, extPort));
+                        }
+                    }
+                }
+            }
         }
 
         // Environment overrides (useful when running in Docker compose)
@@ -223,29 +287,51 @@ public final class PluginConfig {
             limboServerName = envLimbo;
         }
         String envImage = System.getenv("MCSRSWAP_GAMESERVER_IMAGE");
-        if (envImage != null && !envImage.isBlank()) {
-            docker = new Docker(docker.enabled, envImage, docker.network, docker.host, docker.gameDataDir);
-        }
+        if (envImage != null && !envImage.isBlank()) dockerImage = envImage;
         String envNetwork = System.getenv("MCSRSWAP_DOCKER_NETWORK");
-        if (envNetwork != null && !envNetwork.isBlank()) {
-            docker = new Docker(docker.enabled, docker.image, envNetwork, docker.host, docker.gameDataDir);
-        }
+        if (envNetwork != null && !envNetwork.isBlank()) dockerNetwork = envNetwork;
         String envHost = System.getenv("MCSRSWAP_DOCKER_HOST");
-        if (envHost == null || envHost.isBlank()) {
-            envHost = System.getenv("DOCKER_HOST");
-        }
-        if (envHost != null && !envHost.isBlank()) {
-            docker = new Docker(docker.enabled, docker.image, docker.network, envHost, docker.gameDataDir);
-        }
+        if (envHost == null || envHost.isBlank()) envHost = System.getenv("DOCKER_HOST");
+        if (envHost != null && !envHost.isBlank()) dockerHost = envHost;
         String envDockerMode = System.getenv("MCSRSWAP_DOCKER_MODE");
         if (envDockerMode != null
                 && (envDockerMode.equalsIgnoreCase("true") || envDockerMode.equals("1"))) {
-            docker = new Docker(true, docker.image, docker.network, docker.host, docker.gameDataDir);
+            dockerEnabled = true;
         }
         String envGameDataDir = System.getenv("GAME_DATA_DIR");
-        if (envGameDataDir != null && !envGameDataDir.isBlank()) {
-            docker = new Docker(docker.enabled, docker.image, docker.network, docker.host, envGameDataDir);
+        if (envGameDataDir != null && !envGameDataDir.isBlank()) dockerGameDataDir = envGameDataDir;
+        // MCSRSWAP_AUTO_STOP_LOBBY=true — stop lobby container during game, restart on end
+        String envAutoStopLobby = System.getenv("MCSRSWAP_AUTO_STOP_LOBBY");
+        if (envAutoStopLobby != null && !envAutoStopLobby.isBlank()) {
+            dockerAutoStopLobby = toBoolean(envAutoStopLobby);
         }
+        // MCSRSWAP_EXTERNAL_SERVERS=name:host:port,name2:host2:port2
+        String envExternal = System.getenv("MCSRSWAP_EXTERNAL_SERVERS");
+        if (envExternal != null && !envExternal.isBlank()) {
+            for (String entry : envExternal.split(",")) {
+                String[] parts = entry.trim().split(":");
+                if (parts.length >= 3) {
+                    String extName = parts[0].trim();
+                    String extHost = parts[1].trim();
+                    int extPort = toInt(parts[2].trim(), 25565);
+                    if (!extName.isEmpty() && !extHost.isEmpty()) {
+                        dockerExternalServers.add(
+                                new Docker.ExternalServer(extName, extHost, extPort));
+                    }
+                }
+            }
+        }
+
+        Docker docker =
+                new Docker(
+                        dockerEnabled,
+                        dockerImage,
+                        dockerNetwork,
+                        dockerHost,
+                        dockerGameDataDir,
+                        dockerAutoStopLobby,
+                        dockerExternalServers);
+
         String envWorldSeeds = System.getenv("MCSRSWAP_WORLD_SEEDS");
         if (envWorldSeeds != null && !envWorldSeeds.isBlank()) {
             worldSeeds.clear();

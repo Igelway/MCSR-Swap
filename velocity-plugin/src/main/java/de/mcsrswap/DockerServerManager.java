@@ -33,6 +33,8 @@ public class DockerServerManager {
     private static final String GAME_DATA_DIR_CONTAINER = "/managed-data";
 
     private final Map<String, String> serverContainers = new ConcurrentHashMap<>();
+    /** External (non-Docker) servers configured for hybrid mode. */
+    private List<PluginConfig.Docker.ExternalServer> externalServers = new ArrayList<>();
 
     public DockerServerManager(ProxyServer server, Logger logger, VelocitySwapPlugin plugin) {
         this.server = server;
@@ -129,8 +131,32 @@ public class DockerServerManager {
 
         logger.info("Game data dir (host): {}, (container): {}", gameDataDirHost, GAME_DATA_DIR_CONTAINER);
 
+        // Register external (hybrid) servers with Velocity so they can be used in the rotation.
+        externalServers = new ArrayList<>(plugin.getPluginConfig().docker.externalServers);
+        for (PluginConfig.Docker.ExternalServer ext : externalServers) {
+            try {
+                InetSocketAddress addr = new InetSocketAddress(ext.host, ext.port);
+                ServerInfo info = new ServerInfo(ext.name, addr);
+                if (server.getServer(ext.name).isEmpty()) {
+                    server.registerServer(info);
+                }
+                logger.info(
+                        "Registered external game server: {} at {}:{}", ext.name, ext.host, ext.port);
+            } catch (Exception e) {
+                logger.error(
+                        "Failed to register external server {} at {}:{}: {}",
+                        ext.name,
+                        ext.host,
+                        ext.port,
+                        e.getMessage());
+            }
+        }
+
         logger.info(
-                "Docker integration enabled: image={}, network={}", gameServerImage, networkName);
+                "Docker integration enabled: image={}, network={}, externalServers={}",
+                gameServerImage,
+                networkName,
+                externalServers);
     }
 
     private String getPluginVersion() {
@@ -194,14 +220,20 @@ public class DockerServerManager {
 
     /**
      * Start game servers and return a future that completes when all servers are healthy. Returns
-     * the list of server names immediately, and the future completes when ready.
+     * the list of server names immediately, and the future completes when ready. In hybrid mode,
+     * the returned list includes both Docker-managed and external server names.
      */
     public java.util.concurrent.CompletableFuture<List<String>> startServersAsync(int count) {
-        List<String> serverNames = startServersInternal(count);
-        if (serverNames.isEmpty()) {
-            return java.util.concurrent.CompletableFuture.completedFuture(serverNames);
+        List<String> dockerServerNames = startServersInternal(count);
+        // Build the full list: Docker containers + always-on external servers.
+        List<String> allNames = new ArrayList<>(dockerServerNames);
+        for (PluginConfig.Docker.ExternalServer ext : externalServers) {
+            allNames.add(ext.name);
         }
-        return waitForServersReady(serverNames)
+        if (allNames.isEmpty()) {
+            return java.util.concurrent.CompletableFuture.completedFuture(allNames);
+        }
+        return waitForServersReady(dockerServerNames)
                 .thenApply(
                         healthy -> {
                             if (!healthy) {
@@ -209,7 +241,7 @@ public class DockerServerManager {
                                         "Servers failed to become healthy. Aborting game start.");
                                 return Collections.<String>emptyList();
                             }
-                            return serverNames;
+                            return allNames;
                         });
     }
 
@@ -537,8 +569,14 @@ public class DockerServerManager {
                                     logger.info(
                                             "All {} servers are healthy! Waiting for ping...",
                                             serverNames.size());
+                                    // Verify all servers (Docker + external) are actually
+                                    // pingable via Velocity.
+                                    List<String> allToPing = new ArrayList<>(serverNames);
+                                    for (PluginConfig.Docker.ExternalServer ext : externalServers) {
+                                        allToPing.add(ext.name);
+                                    }
                                     // Now verify servers are actually pingable via Velocity
-                                    waitForServersPingable(serverNames)
+                                    waitForServersPingable(allToPing)
                                             .thenAccept(pingResult -> future.complete(pingResult));
                                 } else if (attempt[0] >= maxAttempts) {
                                     logger.error(
@@ -681,7 +719,15 @@ public class DockerServerManager {
         if (!dockerEnabled) {
             return new ArrayList<>(plugin.gameServers);
         }
-        return new ArrayList<>(serverContainers.keySet());
+        List<String> all = new ArrayList<>(serverContainers.keySet());
+        for (PluginConfig.Docker.ExternalServer ext : externalServers) {
+            if (!all.contains(ext.name)) all.add(ext.name);
+        }
+        return all;
+    }
+
+    public int getExternalServerCount() {
+        return externalServers.size();
     }
 
     public Map<String, String> getServerContainers() {

@@ -1516,8 +1516,11 @@ public class VelocitySwapPlugin {
             p.sendMessage(Component.text(lang.get("game_started")));
         }
 
-        // In Docker mode: stop the lobby container once all players have left it.
-        if (dockerManager != null && dockerManager.isDockerEnabled()) {
+        // In Docker mode with autoStopLobby enabled: stop the lobby container once all players
+        // have left it.
+        if (dockerManager != null
+                && dockerManager.isDockerEnabled()
+                && config.docker.autoStopLobby) {
             server.getScheduler()
                     .buildTask(
                             this,
@@ -1750,8 +1753,9 @@ public class VelocitySwapPlugin {
         activePlayers.clear();
         pendingReconnect.clear();
 
-        if (dockerManager != null && dockerManager.isDockerEnabled()) {
-            // Lobby may be stopped — send players to transit (limbo) first, then start the
+        if (dockerManager != null
+                && dockerManager.isDockerEnabled()
+                && config.docker.autoStopLobby) {
             // lobby container and move them there once it's ready.
             for (Player player : participants) {
                 sendToTransit(player);

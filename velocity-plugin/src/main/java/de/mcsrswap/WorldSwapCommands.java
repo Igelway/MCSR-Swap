@@ -380,8 +380,17 @@ public class WorldSwapCommands {
      * Returns an error string, or {@code null} if the configuration is valid.
      */
     private String validatePlayerCountForServers(int serverCount) {
-        if (plugin.versusMode && serverCount % 2 != 0) {
-            return "§cVersus mode requires an even server count (got " + serverCount + ").";
+        int externalCount =
+                (plugin.dockerManager != null) ? plugin.dockerManager.getExternalServerCount() : 0;
+        int totalCount = serverCount + externalCount;
+        if (plugin.versusMode && totalCount % 2 != 0) {
+            return "§cVersus mode requires an even server count (got "
+                    + serverCount
+                    + " Docker + "
+                    + externalCount
+                    + " external = "
+                    + totalCount
+                    + ").";
         }
         return null;
     }
