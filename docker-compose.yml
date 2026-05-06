@@ -102,17 +102,19 @@ services:
     user: "minecraft:minecraft"
 
   limbo:
-    build:
-      context: ./docker
-      dockerfile: Dockerfile.nanolimbo
-    image: ${MCSRSWAP_LIMBO_IMAGE:-ghcr.io/igelway/mcsr-swap-limbo:latest}
+    image: itzg/minecraft-server
     container_name: mcsrswap-limbo
     expose:
       - "25565"
-    volumes:
-      - ${GAME_DATA_DIR:-./data}/limbo:/data
+    environment:
+      EULA: "TRUE"
+      TYPE: NANOLIMBO
+    entrypoint: ["/extra/nanolimbo-entrypoint.sh"]
     secrets:
       - forwarding_secret
+    volumes:
+      - ${GAME_DATA_DIR:-./data}/limbo:/data
+      - ./docker/nanolimbo-entrypoint.sh:/extra/nanolimbo-entrypoint.sh:ro
     networks:
       - mcsrswap-network
     restart: unless-stopped

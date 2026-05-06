@@ -31,8 +31,9 @@ All commands run through the Velocity proxy. Prefix: `/ms`
 
 | Command | Description |
 |---|---|
-| `/ms start` | Start the game (reuses existing Docker containers if present) |
-| `/ms start --clean` | Start the game after removing old Docker containers and volumes |
+| `/ms start` | Start the game — in Docker mode triggers a ready-check; in classic mode starts immediately |
+| `/ms start --clean` | *(Docker only)* Remove old containers and volumes, then start fresh |
+| `/ms prepare [N]` | *(Docker only)* Pre-generate N game servers and wait for players to confirm readiness |
 | `/ms stop` | End the game and send everyone to the lobby |
 | `/ms forceswap` | Immediately rotate all players to the next server |
 | `/ms setrotation <seconds>` | Change the rotation interval (minimum 10 s) |
@@ -40,14 +41,16 @@ All commands run through the Velocity proxy. Prefix: `/ms`
 | `/ms setteamname <a\|b> <name>` | Set the display name of a team |
 | `/ms setversus <true\|false>` | Enable or disable versus mode |
 | `/ms state` | Show the current game state |
+| `/ms player` | Show the current player → server assignment |
 | `/ms ignore <player>` | Toggle whether another player is excluded from game starts (lobby only) |
-
-> **Docker mode** adds `/ms start --clean` (cleanup before start) and `/ms cleanup` (remove containers + volumes). See [README-DOCKER.md](README-DOCKER.md).
+| `/ms seed [i] [seed\|clear]` | *(Docker only)* View or set fixed world seeds per slot |
+| `/ms cleanup` | *(Docker only)* Stop and remove all game server containers and data |
 
 ### Player commands
 
 | Command | Description |
 |---|---|
+| `/ms ready` | Confirm readiness during a ready-check (after `/ms prepare` or `/ms start`) |
 | `/ms jointeam <a\|b>` | Join a team before the game starts (lobby only) |
 | `/ms ignore` | Toggle whether you are excluded from the next game start (lobby only) |
 

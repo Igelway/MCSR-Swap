@@ -33,6 +33,8 @@ public class DockerServerManager {
     private static final String GAME_DATA_DIR_CONTAINER = "/managed-data";
 
     private final Map<String, String> serverContainers = new ConcurrentHashMap<>();
+    /** External (non-Docker) servers configured for hybrid mode. */
+    private List<PluginConfig.Docker.ExternalServer> externalServers = new ArrayList<>();
 
     public DockerServerManager(ProxyServer server, Logger logger, VelocitySwapPlugin plugin) {
         this.server = server;
@@ -129,8 +131,32 @@ public class DockerServerManager {
 
         logger.info("Game data dir (host): {}, (container): {}", gameDataDirHost, GAME_DATA_DIR_CONTAINER);
 
+        // Register external (hybrid) servers with Velocity so they can be used in the rotation.
+        externalServers = new ArrayList<>(plugin.getPluginConfig().docker.externalServers);
+        for (PluginConfig.Docker.ExternalServer ext : externalServers) {
+            try {
+                InetSocketAddress addr = new InetSocketAddress(ext.host, ext.port);
+                ServerInfo info = new ServerInfo(ext.name, addr);
+                if (server.getServer(ext.name).isEmpty()) {
+                    server.registerServer(info);
+                }
+                logger.info(
+                        "Registered external game server: {} at {}:{}", ext.name, ext.host, ext.port);
+            } catch (Exception e) {
+                logger.error(
+                        "Failed to register external server {} at {}:{}: {}",
+                        ext.name,
+                        ext.host,
+                        ext.port,
+                        e.getMessage());
+            }
+        }
+
         logger.info(
-                "Docker integration enabled: image={}, network={}", gameServerImage, networkName);
+                "Docker integration enabled: image={}, network={}, externalServers={}",
+                gameServerImage,
+                networkName,
+                externalServers);
     }
 
     private String getPluginVersion() {
@@ -194,14 +220,20 @@ public class DockerServerManager {
 
     /**
      * Start game servers and return a future that completes when all servers are healthy. Returns
-     * the list of server names immediately, and the future completes when ready.
+     * the list of server names immediately, and the future completes when ready. In hybrid mode,
+     * the returned list includes both Docker-managed and external server names.
      */
     public java.util.concurrent.CompletableFuture<List<String>> startServersAsync(int count) {
-        List<String> serverNames = startServersInternal(count);
-        if (serverNames.isEmpty()) {
-            return java.util.concurrent.CompletableFuture.completedFuture(serverNames);
+        List<String> dockerServerNames = startServersInternal(count);
+        // Build the full list: Docker containers + always-on external servers.
+        List<String> allNames = new ArrayList<>(dockerServerNames);
+        for (PluginConfig.Docker.ExternalServer ext : externalServers) {
+            allNames.add(ext.name);
         }
-        return waitForServersReady(serverNames)
+        if (allNames.isEmpty()) {
+            return java.util.concurrent.CompletableFuture.completedFuture(allNames);
+        }
+        return waitForServersReady(dockerServerNames)
                 .thenApply(
                         healthy -> {
                             if (!healthy) {
@@ -209,7 +241,7 @@ public class DockerServerManager {
                                         "Servers failed to become healthy. Aborting game start.");
                                 return Collections.<String>emptyList();
                             }
-                            return serverNames;
+                            return allNames;
                         });
     }
 
@@ -537,8 +569,14 @@ public class DockerServerManager {
                                     logger.info(
                                             "All {} servers are healthy! Waiting for ping...",
                                             serverNames.size());
+                                    // Verify all servers (Docker + external) are actually
+                                    // pingable via Velocity.
+                                    List<String> allToPing = new ArrayList<>(serverNames);
+                                    for (PluginConfig.Docker.ExternalServer ext : externalServers) {
+                                        allToPing.add(ext.name);
+                                    }
                                     // Now verify servers are actually pingable via Velocity
-                                    waitForServersPingable(serverNames)
+                                    waitForServersPingable(allToPing)
                                             .thenAccept(pingResult -> future.complete(pingResult));
                                 } else if (attempt[0] >= maxAttempts) {
                                     logger.error(
@@ -681,11 +719,122 @@ public class DockerServerManager {
         if (!dockerEnabled) {
             return new ArrayList<>(plugin.gameServers);
         }
-        return new ArrayList<>(serverContainers.keySet());
+        List<String> all = new ArrayList<>(serverContainers.keySet());
+        for (PluginConfig.Docker.ExternalServer ext : externalServers) {
+            if (!all.contains(ext.name)) all.add(ext.name);
+        }
+        return all;
+    }
+
+    public int getExternalServerCount() {
+        return externalServers.size();
     }
 
     public Map<String, String> getServerContainers() {
         return new HashMap<>(serverContainers);
+    }
+
+    /**
+     * Gracefully stops the lobby container. No-op if Docker is disabled or the container is
+     * already stopped.
+     */
+    public void stopLobbyContainer() {
+        if (!dockerEnabled) return;
+        String containerName = "mcsrswap-" + plugin.lobbyServerName;
+        try {
+            var containers =
+                    dockerClient
+                            .listContainersCmd()
+                            .withNameFilter(Collections.singletonList(containerName))
+                            .exec();
+            if (containers.isEmpty()) {
+                logger.debug("Lobby container {} not found or already stopped", containerName);
+                return;
+            }
+            dockerClient.stopContainerCmd(containerName).withTimeout(30).exec();
+            logger.info("Stopped lobby container: {}", containerName);
+        } catch (Exception e) {
+            logger.warn("Failed to stop lobby container {}: {}", containerName, e.getMessage());
+        }
+    }
+
+    /**
+     * Starts the lobby container and returns a future that completes {@code true} when the
+     * container is healthy (or running if no healthcheck is defined), or {@code false} on timeout.
+     * Times out after 120 seconds.
+     */
+    public java.util.concurrent.CompletableFuture<Boolean> startLobbyContainerAsync() {
+        if (!dockerEnabled) {
+            return java.util.concurrent.CompletableFuture.completedFuture(false);
+        }
+        String containerName = "mcsrswap-" + plugin.lobbyServerName;
+        try {
+            dockerClient.startContainerCmd(containerName).exec();
+            logger.info("Starting lobby container: {}", containerName);
+        } catch (Exception e) {
+            logger.error(
+                    "Failed to start lobby container {}: {}", containerName, e.getMessage());
+            return java.util.concurrent.CompletableFuture.completedFuture(false);
+        }
+
+        java.util.concurrent.CompletableFuture<Boolean> future =
+                new java.util.concurrent.CompletableFuture<>();
+        final int maxAttempts = 60; // 60 × 2 s = 120 s
+        final int[] attempt = {0};
+
+        server.getScheduler()
+                .buildTask(
+                        plugin,
+                        new Runnable() {
+                            @Override
+                            public void run() {
+                                attempt[0]++;
+                                try {
+                                    var inspect =
+                                            dockerClient
+                                                    .inspectContainerCmd(containerName)
+                                                    .exec();
+                                    var state = inspect.getState();
+                                    var health = state.getHealth();
+                                    boolean ready =
+                                            health != null
+                                                    ? "healthy".equals(health.getStatus())
+                                                    : Boolean.TRUE.equals(state.getRunning());
+                                    if (ready) {
+                                        logger.info(
+                                                "Lobby container {} is ready", containerName);
+                                        future.complete(true);
+                                        return;
+                                    }
+                                    logger.debug(
+                                            "Lobby container {} not ready yet (attempt {}/{})",
+                                            containerName,
+                                            attempt[0],
+                                            maxAttempts);
+                                } catch (Exception e) {
+                                    logger.warn(
+                                            "Failed to inspect lobby container {}: {}",
+                                            containerName,
+                                            e.getMessage());
+                                }
+                                if (attempt[0] >= maxAttempts) {
+                                    logger.error(
+                                            "Timeout waiting for lobby container {} to become"
+                                                    + " ready",
+                                            containerName);
+                                    future.complete(false);
+                                    return;
+                                }
+                                server.getScheduler()
+                                        .buildTask(plugin, this)
+                                        .delay(2, TimeUnit.SECONDS)
+                                        .schedule();
+                            }
+                        })
+                .delay(2, TimeUnit.SECONDS)
+                .schedule();
+
+        return future;
     }
 
     public void cleanup() {

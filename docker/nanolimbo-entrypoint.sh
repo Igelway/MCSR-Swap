@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-# Read Velocity forwarding secret from Docker secret file
+# Read Velocity forwarding secret from Docker secret file.
 SECRET_FILE="${SECRET_FILE:-/run/secrets/forwarding_secret}"
 if [ -f "$SECRET_FILE" ]; then
     SECRET=$(cat "$SECRET_FILE")
@@ -9,8 +9,9 @@ else
     SECRET="${FORWARDING_SECRET:-change_me}"
 fi
 
-# NanoLimbo v1.8.1 always reads settings.yml from the current working
-# directory (hardcoded Paths.get("./")). Write to /data/ and run from there.
+# Write settings.yml before the itzg start script runs.
+# itzg's start-deployNanoLimbo only generates settings.yml when the file does
+# not exist, so pre-writing it here causes our config to be used as-is.
 mkdir -p /data
 cat > /data/settings.yml << EOF
 bind:
@@ -34,6 +35,8 @@ headerAndFooter:
   enable: false
 
 gameMode: 3
+
+secureProfile: false
 
 brandName:
   enable: false
@@ -67,5 +70,4 @@ traffic:
   maxPacketRate: 500.0
 EOF
 
-cd /data
-exec java -jar /app/NanoLimbo.jar
+exec /start
