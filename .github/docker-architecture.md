@@ -62,9 +62,9 @@ MCSR-Swap supports an optional Docker deployment mode where the Velocity plugin 
 
 ### 4. mcsrswap-limbo (NanoLimbo Transit Server)
 - **Purpose**: Lightweight transit server used during player rotation and reconnects. Players are briefly sent here between game servers so the previous server can save their state before they arrive at the next one.
-- **Image**: Built locally from `docker/Dockerfile.nanolimbo` (NanoLimbo v1.8.1)
-- **Mount**: `${GAME_DATA_DIR:-./data}/limbo:/data` (bind mount; settings.yml written at startup)
-- **Config**: Written dynamically at container start by `nanolimbo-entrypoint.sh` using the Velocity forwarding secret
+- **Image**: `itzg/minecraft-server` with `TYPE=NANOLIMBO` (BoomEaro/NanoLimbo, downloaded at first start)
+- **Mount**: `${GAME_DATA_DIR:-./data}/limbo:/data` (bind mount; NanoLimbo jar cached here after first pull)
+- **Config**: `settings.yml` written at container start by `docker/nanolimbo-entrypoint.sh` using the Velocity forwarding secret; itzg's start script reuses it unchanged
 - **Why not lobby**: Using a dedicated limbo avoids lobby-related events firing during transit
 
 ### 5. mcsrswap-game{N} (Dynamic Game Servers)
@@ -135,20 +135,18 @@ The limbo server is intentionally lightweight (NanoLimbo) — players are never 
 ## Building Images Locally
 
 ```bash
-# Build all three images (velocity + gameserver + limbo)
+# Build both images (velocity + gameserver)
 just docker-build
 
 # Build individual images
 just docker-build-velocity
 just docker-build-gameserver
-just docker-build-limbo
 ```
 
 To use locally built images instead of pulling from ghcr.io, set in `.env`:
 ```env
 MCSRSWAP_VELOCITY_IMAGE=ghcr.io/local/mcsr-swap-velocity:latest
 MCSRSWAP_GAMESERVER_IMAGE=ghcr.io/local/mcsr-swap-gameserver:latest
-MCSRSWAP_LIMBO_IMAGE=ghcr.io/local/mcsr-swap-limbo:latest
 ```
 
 ## Security Considerations
@@ -173,7 +171,6 @@ MCSRSWAP_LIMBO_IMAGE=ghcr.io/local/mcsr-swap-limbo:latest
 ### Optional Overrides
 - `MCSRSWAP_GAMESERVER_IMAGE` – Custom game server image (default: `ghcr.io/igelway/mcsr-swap-gameserver:latest`)
 - `MCSRSWAP_VELOCITY_IMAGE` – Custom Velocity image (default: `ghcr.io/igelway/mcsr-swap-velocity:latest`)
-- `MCSRSWAP_LIMBO_IMAGE` – Custom limbo image (default: `ghcr.io/igelway/mcsr-swap-limbo:latest`)
 - `MCSRSWAP_LOBBY_ADDRESS` – Lobby server hostname (default: `lobby`)
 - `MCSRSWAP_LIMBO_ADDRESS` – Limbo server hostname (default: `limbo`)
 - `MCSRSWAP_CHUNKY_PRELOAD` – Enable Chunky chunk pre-generation before game start (default: `false`)
