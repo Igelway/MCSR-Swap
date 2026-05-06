@@ -178,8 +178,41 @@ MCSRSWAP_GAMESERVER_IMAGE=ghcr.io/local/mcsr-swap-gameserver:latest
 - `MCSRSWAP_CHUNKY_NETHER_RADIUS` – Nether pre-gen radius in chunks (default: `200`)
 - `MCSRSWAP_CHUNKY_END_RADIUS` – End pre-gen radius in chunks (default: `200`)
 - `GAME_DATA_DIR` – Host path for game server data directories (default: `./data`)
+- `MCSRSWAP_AUTO_STOP_LOBBY` – Stop the lobby container on game start, restart on game end (default: `false`)
+- `MCSRSWAP_EXTERNAL_SERVERS` – Comma-separated external servers in `name:host:port` format for hybrid mode (default: none)
 
 ## Future Improvements
 
 - **Config option for bind mounts**: Allow game servers to use bind mounts instead of named volumes for easier world inspection
 - **Kubernetes/Swarm support**: Would require refactoring volume management to use orchestrator-native storage
+
+## Lobby Auto-Stop
+
+When `MCSRSWAP_AUTO_STOP_LOBBY=true`, the Velocity plugin stops the `mcsrswap-{lobbyServerName}` container 15 seconds after `launchGame()` completes (only if empty) and restarts it via `docker start` when `endGame()` is called. Players are held in NanoLimbo during the restart and automatically forwarded to the lobby once it passes health/ping checks (120 s timeout).
+
+The lobby container uses `restart: unless-stopped` in Compose — `docker stop` puts it in stopped state and Docker will **not** auto-restart it until the plugin explicitly calls `docker start`.
+
+## Hybrid Mode
+
+Hybrid mode combines Docker-managed game servers with externally-hosted game servers on other machines. External servers are configured via `docker.externalServers` in `config.yml` or the `MCSRSWAP_EXTERNAL_SERVERS` environment variable.
+
+### Architecture
+
+```
+Host A (Velocity + Docker)         Host B (external game servers)
+┌──────────────────────────┐       ┌────────────────────────────┐
+│ mcsrswap-velocity        │       │ game3 (port 25602)          │
+│   ├── mcsrswap-game1 ◄───┼───────┤ game4 (port 25603)          │
+│   └── mcsrswap-game2     │  LAN  │ (Fabric + FabricProxy)      │
+│ mcsrswap-lobby           │       └────────────────────────────┘
+└──────────────────────────┘
+```
+
+### Behaviour
+
+- External servers are registered with Velocity at plugin startup and are never removed.
+- `startServersAsync(N)` spawns N Docker containers; external servers are appended to the returned server list so `gameServers` includes both.
+- `waitForServersReady()` pings both Docker containers and external servers before the ready-check proceeds.
+- `getRunningServers()` returns Docker container names + external server names; both are visible to `detectServers()`.
+- Versus mode even-check uses the **total** count (Docker + external).
+- `/ms cleanup` only removes Docker containers and volumes — external servers are untouched.
