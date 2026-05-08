@@ -37,7 +37,7 @@
 | `/ms seed` | List configured world seeds |
 | `/ms seed <i> <seed>` | Set the seed for slot `i` (e.g. `/ms seed 1 -123456`) |
 | `/ms seed <i> clear` | Remove the set seed for slot `i` (uses random) |
-| `/ms seed clear` | Clear all fixed seeds |
+| `/ms seed clear` | Clear all set seeds |
 
 In **versus mode**, seeds are mirrored between teams: setting or clearing seed slot `i` applies to both teams.
 For all commands see the [main README](README.md#commands).
