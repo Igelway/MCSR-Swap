@@ -72,8 +72,6 @@ When `MCSRSWAP_AUTO_STOP_LOBBY=true`, the lobby container is stopped automatical
 
 **Player experience:** At game end, players are briefly held in the NanoLimbo transit server while the lobby container starts back up (up to 120 s timeout). Once the lobby is ready they are moved there automatically.
 
-**Important:** The lobby container uses `restart: unless-stopped` in Compose, so `docker stop` does not cause Docker to auto-restart it — only the plugin brings it back.
-
 Enable in `.env`:
 ```env
 MCSRSWAP_AUTO_STOP_LOBBY=true
