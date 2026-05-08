@@ -771,6 +771,10 @@ public class DockerServerManager {
         try {
             dockerClient.startContainerCmd(containerName).exec();
             logger.info("Starting lobby container: {}", containerName);
+        } catch (com.github.dockerjava.api.exception.NotModifiedException e) {
+            // Container is already running — proceed directly to health-check polling.
+            logger.info(
+                    "Lobby container {} is already running, skipping start", containerName);
         } catch (Exception e) {
             logger.error(
                     "Failed to start lobby container {}: {}", containerName, e.getMessage());

@@ -1724,11 +1724,51 @@ public class VelocitySwapPlugin {
             } else {
                 player.sendMessage(Component.text(lang.get("game_team_loses", "team", winnerName)));
             }
-            sendToLobby(player);
         }
         watchingPlayers.clear();
         activePlayers.clear();
         pendingReconnect.clear();
+
+        if (dockerManager != null
+                && dockerManager.isDockerEnabled()
+                && config.docker.autoStopLobby) {
+            for (Player player : participants) {
+                sendToTransit(player);
+            }
+            dockerManager
+                    .startLobbyContainerAsync()
+                    .thenAccept(
+                            ok -> {
+                                if (!ok) {
+                                    logger.error(
+                                            "Lobby container failed to start — players will"
+                                                    + " remain in limbo");
+                                    return;
+                                }
+                                server.getScheduler()
+                                        .buildTask(
+                                                this,
+                                                () -> {
+                                                    for (Player p : server.getAllPlayers()) {
+                                                        p.getCurrentServer()
+                                                                .filter(
+                                                                        cs ->
+                                                                                cs.getServerInfo()
+                                                                                        .getName()
+                                                                                        .equals(
+                                                                                                limboServerName))
+                                                                .ifPresent(
+                                                                        cs -> sendToLobby(p));
+                                                    }
+                                                })
+                                        .delay(10, TimeUnit.SECONDS)
+                                        .schedule();
+                            });
+        } else {
+            for (Player player : participants) {
+                sendToLobby(player);
+            }
+        }
     }
 
     private void winGame() {
