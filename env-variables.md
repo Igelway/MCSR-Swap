@@ -19,7 +19,7 @@ Variables prefixed with `MCSRSWAP_GAME_` are forwarded to each spawned game serv
 |---|---|---|
 | `MCSRSWAP_GAME_OPS` | – | Comma-separated list of op (admin) players on game servers. |
 | `MCSRSWAP_GAME_DIFFICULTY` | `easy` | Game difficulty (`peaceful` / `easy` / `normal` / `hard`). |
-| `MCSRSWAP_GAME_VIEW_DISTANCE` | `20` | Server View distance. |
+| `MCSRSWAP_GAME_VIEW_DISTANCE` | `20` | Server view distance. |
 | `MCSRSWAP_GAME_MAX_PLAYERS` | `20` | Maximum players per game server. |
 | `MCSRSWAP_GAME_MEMORY` | `2G` | JVM heap allocated to each game server container. |
 
@@ -29,7 +29,7 @@ Requires `MCSRSWAP_CHUNKY_PRELOAD=true`. Carpet and Chunky mods are bundled in t
 
 | Variable | Default | Description |
 |---|---|---|
-| `MCSRSWAP_CHUNKY_PRELOAD` | `false` | Enable automatic chunk pre-generation on game server startup. |
+| `MCSRSWAP_CHUNKY_PRELOAD` | `false` | Enable automatic chunk pre-generation on game server startup (or after /ms prepare). |
 | `MCSRSWAP_CHUNKY_OW_RADIUS` | `200` | Overworld pre-generation radius (chunks). |
 | `MCSRSWAP_CHUNKY_NETHER_RADIUS` | `200` | Nether pre-generation radius (chunks). |
 | `MCSRSWAP_CHUNKY_END_RADIUS` | `200` | End pre-generation radius (chunks). |
