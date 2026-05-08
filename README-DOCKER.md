@@ -35,8 +35,8 @@
 | `/ms stop` | Stop the current game (containers keep running) |
 | `/ms cleanup` | Stop and remove all game server containers and data directories |
 | `/ms seed` | List configured world seeds |
-| `/ms seed <i> <seed>` | Set the fixed seed for slot `i` (e.g. `/ms seed 1 -123456`) |
-| `/ms seed <i> clear` | Remove the fixed seed for slot `i` (uses random) |
+| `/ms seed <i> <seed>` | Set the seed for slot `i` (e.g. `/ms seed 1 -123456`) |
+| `/ms seed <i> clear` | Remove the set seed for slot `i` (uses random) |
 | `/ms seed clear` | Clear all fixed seeds |
 
 In **versus mode**, seeds are mirrored between teams: setting or clearing seed slot `i` applies to both teams.
