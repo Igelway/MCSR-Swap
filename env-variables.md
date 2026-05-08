@@ -19,7 +19,7 @@ Variables prefixed with `MCSRSWAP_GAME_` are forwarded to each spawned game serv
 |---|---|---|
 | `MCSRSWAP_GAME_OPS` | – | Comma-separated list of op (admin) players on game servers. |
 | `MCSRSWAP_GAME_DIFFICULTY` | `easy` | Game difficulty (`peaceful` / `easy` / `normal` / `hard`). |
-| `MCSRSWAP_GAME_VIEW_DISTANCE` | `20` | Chunk view distance. |
+| `MCSRSWAP_GAME_VIEW_DISTANCE` | `20` | Server View distance. |
 | `MCSRSWAP_GAME_MAX_PLAYERS` | `20` | Maximum players per game server. |
 | `MCSRSWAP_GAME_MEMORY` | `2G` | JVM heap allocated to each game server container. |
 
