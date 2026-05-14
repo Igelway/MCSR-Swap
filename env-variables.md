@@ -25,7 +25,7 @@ Variables prefixed with `MCSRSWAP_GAME_` are forwarded to each spawned game serv
 
 ### Chunky pre-generation *(optional)*
 
-Requires `MCSRSWAP_CHUNKY_PRELOAD=true`. Carpet and Chunky mods are bundled in the game server image. The server generates chunks on startup before signalling ready, which increases container start time.
+Requires `MCSRSWAP_CHUNKY_PRELOAD=true`. Chunky mod is bundled in the game server image. The server generates chunks on startup before signalling ready, which increases container start time.
 
 | Variable | Default | Description |
 |---|---|---|
