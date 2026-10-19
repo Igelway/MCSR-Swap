@@ -46,8 +46,10 @@ public final class PluginConfig {
     public final int eyeHoverTicks;
 
     public final List<String> admins;
+
     /** Players pre-configured to be ignored at game start (names or UUIDs). */
     public final List<String> ignorePlayers;
+
     public final List<Long> worldSeeds;
     public final Docker docker;
 
@@ -56,19 +58,25 @@ public final class PluginConfig {
         public final String image;
         public final String network;
         public final String host;
-        /** Host-side absolute path for game server data directories (bind-mounted into game containers). */
-        public final String gameDataDir;
+
         /**
-         * When {@code true}, the lobby container is stopped once a game starts and restarted when the
-         * game ends. Controlled by {@code docker.autoStopLobby: true} or the env variable
+         * Host-side absolute path for game server data directories (bind-mounted into game
+         * containers).
+         */
+        public final String gameDataDir;
+
+        /**
+         * When {@code true}, the lobby container is stopped once a game starts and restarted when
+         * the game ends. Controlled by {@code docker.autoStopLobby: true} or the env variable
          * {@code MCSRSWAP_AUTO_STOP_LOBBY=true}. Default: {@code false}.
          */
         public final boolean autoStopLobby;
+
         /**
-         * Externally-hosted game servers (on other machines) included in the game rotation alongside
-         * Docker-managed containers. These are registered with Velocity at startup and included in
-         * the readiness ping-check. Configured via {@code docker.externalServers} in config.yml or
-         * {@code MCSRSWAP_EXTERNAL_SERVERS=name:host:port,...} in the environment.
+         * Externally-hosted game servers (on other machines) included in the game rotation
+         * alongside Docker-managed containers. These are registered with Velocity at startup and
+         * included in the readiness ping-check. Configured via {@code docker.externalServers} in
+         * config.yml or {@code MCSRSWAP_EXTERNAL_SERVERS=name:host:port,...} in the environment.
          */
         public final List<ExternalServer> externalServers;
 
@@ -246,16 +254,13 @@ public final class PluginConfig {
 
         if (dockerMap != null) {
             dockerEnabled = toBoolean(dockerMap.getOrDefault("enabled", DEFAULT_DOCKER_ENABLED));
-            dockerImage =
-                    Objects.toString(dockerMap.getOrDefault("image", DEFAULT_DOCKER_IMAGE));
+            dockerImage = Objects.toString(dockerMap.getOrDefault("image", DEFAULT_DOCKER_IMAGE));
             dockerNetwork =
                     Objects.toString(dockerMap.getOrDefault("network", DEFAULT_DOCKER_NETWORK));
-            if (dockerMap.containsKey("host"))
-                dockerHost = Objects.toString(dockerMap.get("host"));
+            if (dockerMap.containsKey("host")) dockerHost = Objects.toString(dockerMap.get("host"));
             if (dockerMap.containsKey("gameDataDir"))
                 dockerGameDataDir = Objects.toString(dockerMap.get("gameDataDir"));
-            dockerAutoStopLobby =
-                    toBoolean(dockerMap.getOrDefault("autoStopLobby", false));
+            dockerAutoStopLobby = toBoolean(dockerMap.getOrDefault("autoStopLobby", false));
             Object extObj = dockerMap.get("externalServers");
             if (extObj instanceof List) {
                 for (Object entry : (List<?>) extObj) {

@@ -15,6 +15,7 @@
     "MemoryExpiryAccessor",
     "PlayerDataMixin",
     "PlayerManagerInvoker",
+    "PlayerManagerMixin",
     "SpectatorLockMixin"
   ],
   "client": [],

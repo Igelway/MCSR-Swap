@@ -8,14 +8,12 @@ import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.ServerInfo;
-
-import org.slf4j.Logger;
-
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
 
 public class DockerServerManager {
 
@@ -33,6 +31,7 @@ public class DockerServerManager {
     private static final String GAME_DATA_DIR_CONTAINER = "/managed-data";
 
     private final Map<String, String> serverContainers = new ConcurrentHashMap<>();
+
     /** External (non-Docker) servers configured for hybrid mode. */
     private List<PluginConfig.Docker.ExternalServer> externalServers = new ArrayList<>();
 
@@ -115,9 +114,10 @@ public class DockerServerManager {
         }
 
         // Determine host-side game data path: config takes priority, then GAME_DATA_DIR env var.
-        String gameDataDirValue = dockerConfig.containsKey("gameDataDir")
-                ? Objects.toString(dockerConfig.get("gameDataDir"))
-                : System.getenv("GAME_DATA_DIR");
+        String gameDataDirValue =
+                dockerConfig.containsKey("gameDataDir")
+                        ? Objects.toString(dockerConfig.get("gameDataDir"))
+                        : System.getenv("GAME_DATA_DIR");
         if (gameDataDirValue == null || gameDataDirValue.isEmpty()) {
             throw new RuntimeException(
                     "docker.gameDataDir is not set. Set it in config.yml (docker.gameDataDir)"
@@ -125,11 +125,16 @@ public class DockerServerManager {
         }
         if (!gameDataDirValue.startsWith("/")) {
             throw new RuntimeException(
-                    "docker.gameDataDir must be an absolute path, got: \"" + gameDataDirValue + "\"");
+                    "docker.gameDataDir must be an absolute path, got: \""
+                            + gameDataDirValue
+                            + "\"");
         }
         gameDataDirHost = gameDataDirValue.replaceAll("/+$", "");
 
-        logger.info("Game data dir (host): {}, (container): {}", gameDataDirHost, GAME_DATA_DIR_CONTAINER);
+        logger.info(
+                "Game data dir (host): {}, (container): {}",
+                gameDataDirHost,
+                GAME_DATA_DIR_CONTAINER);
 
         // Register external (hybrid) servers with Velocity so they can be used in the rotation.
         externalServers = new ArrayList<>(plugin.getPluginConfig().docker.externalServers);
@@ -141,7 +146,10 @@ public class DockerServerManager {
                     server.registerServer(info);
                 }
                 logger.info(
-                        "Registered external game server: {} at {}:{}", ext.name, ext.host, ext.port);
+                        "Registered external game server: {} at {}:{}",
+                        ext.name,
+                        ext.host,
+                        ext.port);
             } catch (Exception e) {
                 logger.error(
                         "Failed to register external server {} at {}:{}: {}",
@@ -213,7 +221,8 @@ public class DockerServerManager {
             } catch (Exception inspectEx) {
                 logger.error(
                         "Image '{}' not available locally either.", gameServerImage, inspectEx);
-                throw new RuntimeException("Image pull failed and no local image: " + gameServerImage, e);
+                throw new RuntimeException(
+                        "Image pull failed and no local image: " + gameServerImage, e);
             }
         }
     }
@@ -314,7 +323,10 @@ public class DockerServerManager {
             java.nio.file.Files.createDirectories(serverDataContainer);
             logger.info("Created game data directory: {}", serverDataContainer);
         } catch (Exception e) {
-            logger.warn("Could not create game data directory {}: {}", serverDataContainer, e.getMessage());
+            logger.warn(
+                    "Could not create game data directory {}: {}",
+                    serverDataContainer,
+                    e.getMessage());
         }
         String hostServerDataPath = gameDataDirHost + "/" + serverName;
 
@@ -403,8 +415,7 @@ public class DockerServerManager {
                 java.nio.file.Paths.get(
                         System.getenv()
                                 .getOrDefault(
-                                        "VELOCITY_SECRET_FILE",
-                                        "/run/secrets/forwarding_secret"));
+                                        "VELOCITY_SECRET_FILE", "/run/secrets/forwarding_secret"));
         // Fallback: <pluginDataDir>/../../forwarding.secret (Velocity root, manual-mode default)
         if (!java.nio.file.Files.exists(secretFile)) {
             secretFile =
@@ -467,7 +478,12 @@ public class DockerServerManager {
         final String GAME_PREFIX = "MCSRSWAP_GAME_";
         System.getenv().entrySet().stream()
                 .filter(e -> e.getKey().startsWith(GAME_PREFIX) && !e.getValue().isBlank())
-                .forEach(e -> env.add(e.getKey().substring(GAME_PREFIX.length()) + "=" + e.getValue()));
+                .forEach(
+                        e ->
+                                env.add(
+                                        e.getKey().substring(GAME_PREFIX.length())
+                                                + "="
+                                                + e.getValue()));
 
         CreateContainerResponse container =
                 dockerClient
@@ -480,10 +496,12 @@ public class DockerServerManager {
                                 HostConfig.newHostConfig()
                                         .withNetworkMode(networkName)
                                         .withMemory(3221225472L)
-                                         .withMounts(List.of(new Mount()
-                                                .withType(MountType.BIND)
-                                                .withSource(hostServerDataPath)
-                                                .withTarget("/data"))))
+                                        .withMounts(
+                                                List.of(
+                                                        new Mount()
+                                                                .withType(MountType.BIND)
+                                                                .withSource(hostServerDataPath)
+                                                                .withTarget("/data"))))
                         .exec();
 
         dockerClient.startContainerCmd(container.getId()).exec();
@@ -503,8 +521,9 @@ public class DockerServerManager {
         Set<String> pendingServers = ConcurrentHashMap.newKeySet();
         pendingServers.addAll(serverNames);
 
-        // Check health every 2 seconds for up to 120 seconds
-        final int maxAttempts = 60;
+        // Check every 2 seconds for up to 5 minutes. The itzg base image has a 120 s start
+        // period, so a 120 s timeout could abort just before the first successful health check.
+        final int maxAttempts = 150;
         final int[] attempt = {0};
 
         server.getScheduler()
@@ -531,20 +550,32 @@ public class DockerServerManager {
                                         var state = inspect.getState();
                                         var health = state.getHealth();
 
-                                        if (health != null
-                                                && "healthy".equals(health.getStatus())) {
-                                            logger.info("Server {} is healthy", serverName);
+                                        boolean healthy =
+                                                health != null
+                                                        && "healthy".equals(health.getStatus());
+                                        // Images without a HEALTHCHECK never report "healthy";
+                                        // accept a running container in that case. Ping is still
+                                        // checked afterwards.
+                                        boolean runningWithoutHealthcheck =
+                                                health == null
+                                                        && Boolean.TRUE.equals(state.getRunning());
+                                        if (healthy || runningWithoutHealthcheck) {
+                                            logger.info("Server {} is ready", serverName);
                                             pendingServers.remove(serverName);
-                                        } else if (state.getRunning() != null
-                                                && state.getRunning()) {
-                                            String healthStatus =
-                                                    health != null
-                                                            ? health.getStatus()
-                                                            : "no-healthcheck";
+                                        } else if (health != null
+                                                && "unhealthy".equals(health.getStatus())) {
+                                            logger.error(
+                                                    "Server {} reported unhealthy; aborting start",
+                                                    serverName);
+                                            future.complete(false);
+                                            return;
+                                        } else if (Boolean.TRUE.equals(state.getRunning())) {
                                             logger.debug(
                                                     "Server {} health: {}",
                                                     serverName,
-                                                    healthStatus);
+                                                    health != null
+                                                            ? health.getStatus()
+                                                            : "no-healthcheck");
                                         } else {
                                             // Container not running - might have crashed
                                             String status = state.getStatus();
@@ -660,14 +691,18 @@ public class DockerServerManager {
                     .withLabelFilter(List.of("mcsrswap.managed=true"))
                     .withShowAll(true)
                     .exec()
-                    .forEach(c -> {
-                        String serverName = c.getLabels() != null
-                                ? c.getLabels().get("mcsrswap.server")
-                                : null;
-                        if (serverName != null) serverNames.add(serverName);
-                    });
+                    .forEach(
+                            c -> {
+                                String serverName =
+                                        c.getLabels() != null
+                                                ? c.getLabels().get("mcsrswap.server")
+                                                : null;
+                                if (serverName != null) serverNames.add(serverName);
+                            });
         } catch (Exception e) {
-            logger.warn("Could not query managed containers via Docker API, falling back to known list: {}", e.getMessage());
+            logger.warn(
+                    "Could not query managed containers via Docker API, falling back to known list: {}",
+                    e.getMessage());
         }
         serverNames.addAll(serverContainers.keySet());
         serverNames.addAll(plugin.gameServers);
@@ -691,27 +726,35 @@ public class DockerServerManager {
                 logger.info("Removed game data directory: {}", serverDir);
                 removedCount++;
             } catch (Exception e) {
-                logger.error("Failed to remove game data directory {}: {}", serverDir, e.getMessage(), e);
+                logger.error(
+                        "Failed to remove game data directory {}: {}",
+                        serverDir,
+                        e.getMessage(),
+                        e);
             }
         }
 
         if (removedCount == 0) {
             logger.info("No game server data directories found to remove");
         } else {
-            logger.info("Removed {} game server data director{}", removedCount, removedCount == 1 ? "y" : "ies");
+            logger.info(
+                    "Removed {} game server data director{}",
+                    removedCount,
+                    removedCount == 1 ? "y" : "ies");
         }
     }
 
     private void deleteDirectory(java.nio.file.Path dir) throws java.io.IOException {
         try (var stream = java.nio.file.Files.walk(dir)) {
             stream.sorted(java.util.Comparator.reverseOrder())
-                    .forEach(p -> {
-                        try {
-                            java.nio.file.Files.delete(p);
-                        } catch (java.io.IOException e) {
-                            throw new java.io.UncheckedIOException(e);
-                        }
-                    });
+                    .forEach(
+                            p -> {
+                                try {
+                                    java.nio.file.Files.delete(p);
+                                } catch (java.io.IOException e) {
+                                    throw new java.io.UncheckedIOException(e);
+                                }
+                            });
         }
     }
 
@@ -735,8 +778,8 @@ public class DockerServerManager {
     }
 
     /**
-     * Gracefully stops the lobby container. No-op if Docker is disabled or the container is
-     * already stopped.
+     * Gracefully stops the lobby container. No-op if Docker is disabled or the container is already
+     * stopped.
      */
     public void stopLobbyContainer() {
         if (!dockerEnabled) return;
@@ -773,11 +816,9 @@ public class DockerServerManager {
             logger.info("Starting lobby container: {}", containerName);
         } catch (com.github.dockerjava.api.exception.NotModifiedException e) {
             // Container is already running — proceed directly to health-check polling.
-            logger.info(
-                    "Lobby container {} is already running, skipping start", containerName);
+            logger.info("Lobby container {} is already running, skipping start", containerName);
         } catch (Exception e) {
-            logger.error(
-                    "Failed to start lobby container {}: {}", containerName, e.getMessage());
+            logger.error("Failed to start lobby container {}: {}", containerName, e.getMessage());
             return java.util.concurrent.CompletableFuture.completedFuture(false);
         }
 
@@ -795,9 +836,7 @@ public class DockerServerManager {
                                 attempt[0]++;
                                 try {
                                     var inspect =
-                                            dockerClient
-                                                    .inspectContainerCmd(containerName)
-                                                    .exec();
+                                            dockerClient.inspectContainerCmd(containerName).exec();
                                     var state = inspect.getState();
                                     var health = state.getHealth();
                                     boolean ready =
@@ -805,8 +844,7 @@ public class DockerServerManager {
                                                     ? "healthy".equals(health.getStatus())
                                                     : Boolean.TRUE.equals(state.getRunning());
                                     if (ready) {
-                                        logger.info(
-                                                "Lobby container {} is ready", containerName);
+                                        logger.info("Lobby container {} is ready", containerName);
                                         future.complete(true);
                                         return;
                                     }
@@ -865,60 +903,109 @@ public class DockerServerManager {
     }
 
     /**
-     * Polls each game server's {@code /managed-data/{name}/.mcsrswap-ready} file, which the Fabric
-     * mod writes when Chunky preload has finished. Times out after 10 minutes.
+     * Waits for each game server's {@code /managed-data/{name}/.mcsrswap-ready} file, which the
+     * Fabric mod writes when Chunky preload has finished. A WatchService reacts to file creation
+     * immediately; a one-second scan remains as a fallback for bind mounts that do not deliver
+     * inotify events. Times out after 10 minutes.
      */
     private java.util.concurrent.CompletableFuture<Boolean> waitForChunkyReady(
             List<String> serverNames) {
         logger.info(
                 "Waiting for Chunky preload to complete on {} game server(s)...",
                 serverNames.size());
+
+        java.nio.file.WatchService watchService = null;
+        try {
+            watchService = java.nio.file.FileSystems.getDefault().newWatchService();
+            for (String serverName : serverNames) {
+                java.nio.file.Path dir =
+                        java.nio.file.Paths.get(GAME_DATA_DIR_CONTAINER, serverName);
+                java.nio.file.Files.createDirectories(dir);
+                dir.register(
+                        watchService,
+                        java.nio.file.StandardWatchEventKinds.ENTRY_CREATE,
+                        java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY);
+            }
+        } catch (Exception e) {
+            logger.warn(
+                    "Could not watch Chunky ready files; falling back to one-second polling: {}",
+                    e.getMessage());
+        }
+
+        final java.nio.file.WatchService watch = watchService;
         java.util.concurrent.CompletableFuture<Boolean> future =
                 new java.util.concurrent.CompletableFuture<>();
         Set<String> pending = ConcurrentHashMap.newKeySet();
         pending.addAll(serverNames);
 
-        final int maxAttempts = 300; // 10 min at 2 s intervals
-        final int[] attempt = {0};
+        Thread watcherThread =
+                new Thread(
+                        () -> {
+                            long deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(10);
+                            try {
+                                while (!pending.isEmpty()) {
+                                    // Initial check plus fallback scan for filesystems that do not
+                                    // deliver create events (some bind mounts).
+                                    for (String serverName : new ArrayList<>(pending)) {
+                                        java.nio.file.Path readyFile =
+                                                java.nio.file.Paths.get(
+                                                        GAME_DATA_DIR_CONTAINER,
+                                                        serverName,
+                                                        ".mcsrswap-ready");
+                                        if (java.nio.file.Files.exists(readyFile)) {
+                                            logger.info(
+                                                    "Chunky preload done for server {}",
+                                                    serverName);
+                                            pending.remove(serverName);
+                                        }
+                                    }
 
-        server.getScheduler()
-                .buildTask(
-                        plugin,
-                        new Runnable() {
-                            @Override
-                            public void run() {
-                                attempt[0]++;
-                                for (String serverName : new ArrayList<>(pending)) {
-                                    java.nio.file.Path readyFile =
-                                            java.nio.file.Paths.get(
-                                                    GAME_DATA_DIR_CONTAINER,
-                                                    serverName,
-                                                    ".mcsrswap-ready");
-                                    if (java.nio.file.Files.exists(readyFile)) {
-                                        logger.info(
-                                                "Chunky preload done for server {}", serverName);
-                                        pending.remove(serverName);
+                                    if (pending.isEmpty()) {
+                                        logger.info("Chunky preload complete on all servers!");
+                                        server.getScheduler()
+                                                .buildTask(plugin, () -> future.complete(true))
+                                                .schedule();
+                                        return;
+                                    }
+                                    if (System.nanoTime() >= deadline) {
+                                        logger.warn(
+                                                "Timeout waiting for Chunky ready files. Pending:"
+                                                        + " {}. Proceeding anyway.",
+                                                pending);
+                                        server.getScheduler()
+                                                .buildTask(plugin, () -> future.complete(true))
+                                                .schedule();
+                                        return;
+                                    }
+
+                                    if (watch != null) {
+                                        watch.poll(1, TimeUnit.SECONDS);
+                                        java.nio.file.WatchKey key;
+                                        while ((key = watch.poll()) != null) {
+                                            key.pollEvents();
+                                            key.reset();
+                                        }
+                                    } else {
+                                        Thread.sleep(1000);
                                     }
                                 }
-                                if (pending.isEmpty()) {
-                                    logger.info("Chunky preload complete on all servers!");
-                                    future.complete(true);
-                                } else if (attempt[0] >= maxAttempts) {
-                                    logger.warn(
-                                            "Timeout waiting for Chunky ready files. Pending: {}"
-                                                    + ". Proceeding anyway.",
-                                            pending);
-                                    future.complete(true);
-                                } else {
-                                    server.getScheduler()
-                                            .buildTask(plugin, this)
-                                            .delay(2, TimeUnit.SECONDS)
-                                            .schedule();
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                server.getScheduler()
+                                        .buildTask(plugin, () -> future.complete(true))
+                                        .schedule();
+                            } finally {
+                                if (watch != null) {
+                                    try {
+                                        watch.close();
+                                    } catch (java.io.IOException ignored) {
+                                    }
                                 }
                             }
-                        })
-                .delay(2, TimeUnit.SECONDS)
-                .schedule();
+                        },
+                        "mcsrswap-chunky-ready");
+        watcherThread.setDaemon(true);
+        watcherThread.start();
 
         return future;
     }
@@ -930,95 +1017,97 @@ public class DockerServerManager {
     private java.util.concurrent.CompletableFuture<Boolean> waitForServersPingable(
             List<String> serverNames) {
         logger.info("Verifying {} servers are pingable...", serverNames.size());
+        return pingServers(serverNames, 0);
+    }
 
+    /**
+     * One ping round. All futures complete individually, so there is no arbitrary sleep after
+     * issuing the requests; the next round is scheduled only when a ping actually failed.
+     */
+    private java.util.concurrent.CompletableFuture<Boolean> pingServers(
+            List<String> serverNames, int attempt) {
         java.util.concurrent.CompletableFuture<Boolean> future =
                 new java.util.concurrent.CompletableFuture<>();
-        Set<String> pendingServers = ConcurrentHashMap.newKeySet();
-        pendingServers.addAll(serverNames);
+        List<java.util.concurrent.CompletableFuture<Boolean>> pings = new ArrayList<>();
 
-        final int maxAttempts = 30; // 30 seconds timeout
-        final int[] attempt = {0};
+        for (String serverName : serverNames) {
+            var ping =
+                    server.getServer(serverName)
+                            .map(
+                                    registeredServer ->
+                                            registeredServer
+                                                    .ping()
+                                                    .handle((result, error) -> error == null))
+                            .orElseGet(
+                                    () ->
+                                            java.util.concurrent.CompletableFuture.completedFuture(
+                                                    false));
+            pings.add(ping);
+        }
 
-        server.getScheduler()
-                .buildTask(
-                        plugin,
-                        new Runnable() {
-                            @Override
-                            public void run() {
-                                attempt[0]++;
-
-                                for (String serverName : new ArrayList<>(pendingServers)) {
-                                    server.getServer(serverName)
-                                            .ifPresent(
-                                                    registeredServer -> {
-                                                        registeredServer
-                                                                .ping()
-                                                                .whenComplete(
-                                                                        (ping, error) -> {
-                                                                            if (error == null) {
-                                                                                logger.info(
-                                                                                        "Server {}"
-                                                                                            + " is pingable",
-                                                                                        serverName);
-                                                                                pendingServers
-                                                                                        .remove(
-                                                                                                serverName);
-                                                                            } else {
-                                                                                logger.debug(
-                                                                                        "Server {}"
-                                                                                            + " ping"
-                                                                                            + " failed:"
-                                                                                            + " {}",
-                                                                                        serverName,
-                                                                                        error
-                                                                                                .getMessage());
-                                                                            }
-                                                                        });
-                                                    });
-                                }
-
-                                // Check after a short delay to allow ping responses
-                                server.getScheduler()
-                                        .buildTask(
-                                                plugin,
-                                                () -> {
-                                                    if (pendingServers.isEmpty()) {
-                                                        logger.info(
-                                                                "All {} servers are pingable and"
-                                                                        + " ready!",
-                                                                serverNames.size());
-                                                        String chunkyPreload =
-                                                                System.getenv(
-                                                                        "MCSRSWAP_CHUNKY_PRELOAD");
-                                                        if ("true"
-                                                                .equalsIgnoreCase(chunkyPreload)) {
-                                                            waitForChunkyReady(serverNames)
-                                                                    .thenAccept(
-                                                                            future::complete);
+        java.util.concurrent.CompletableFuture.allOf(
+                        pings.toArray(new java.util.concurrent.CompletableFuture[0]))
+                .whenComplete(
+                        (ignored, error) -> {
+                            boolean allPingable =
+                                    error == null
+                                            && pings.stream()
+                                                    .allMatch(
+                                                            ping ->
+                                                                    Boolean.TRUE.equals(
+                                                                            ping.join()));
+                            if (allPingable) {
+                                logger.info(
+                                        "All {} servers are pingable and ready!",
+                                        serverNames.size());
+                                String chunkyPreload = System.getenv("MCSRSWAP_CHUNKY_PRELOAD");
+                                if ("true".equalsIgnoreCase(chunkyPreload)) {
+                                    waitForChunkyReady(serverNames)
+                                            .whenComplete(
+                                                    (ready, chunkyError) -> {
+                                                        if (chunkyError != null) {
+                                                            future.completeExceptionally(
+                                                                    chunkyError);
                                                         } else {
-                                                            future.complete(true);
+                                                            future.complete(ready);
                                                         }
-                                                    } else if (attempt[0] >= maxAttempts) {
-                                                        logger.error(
-                                                                "Timeout waiting for servers to"
-                                                                        + " become pingable. Still"
-                                                                        + " pending: {}",
-                                                                pendingServers);
-                                                        future.complete(false);
-                                                    } else {
-                                                        // Schedule next attempt
-                                                        server.getScheduler()
-                                                                .buildTask(plugin, this)
-                                                                .delay(1, TimeUnit.SECONDS)
-                                                                .schedule();
-                                                    }
-                                                })
-                                        .delay(500, TimeUnit.MILLISECONDS)
-                                        .schedule();
+                                                    });
+                                } else {
+                                    future.complete(true);
+                                }
+                                return;
                             }
-                        })
-                .delay(1, TimeUnit.SECONDS)
-                .schedule();
+
+                            if (attempt >= 30) {
+                                logger.error(
+                                        "Timeout waiting for servers to become pingable after"
+                                                + " {} attempts",
+                                        attempt + 1);
+                                future.complete(false);
+                                return;
+                            }
+
+                            logger.debug(
+                                    "Ping attempt {} failed for some servers; retrying",
+                                    attempt + 1);
+                            server.getScheduler()
+                                    .buildTask(
+                                            plugin,
+                                            () ->
+                                                    pingServers(serverNames, attempt + 1)
+                                                            .whenComplete(
+                                                                    (result, retryError) -> {
+                                                                        if (retryError != null) {
+                                                                            future
+                                                                                    .completeExceptionally(
+                                                                                            retryError);
+                                                                        } else {
+                                                                            future.complete(result);
+                                                                        }
+                                                                    }))
+                                    .delay(1, TimeUnit.SECONDS)
+                                    .schedule();
+                        });
 
         return future;
     }

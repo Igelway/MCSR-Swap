@@ -73,6 +73,7 @@ MCSR-Swap supports an optional Docker deployment mode where the Velocity plugin 
 - **Mods included**:
   - **Carpet** – Enables `/tick freeze` for world-freeze between rotations
   - **Chunky** – Pre-generates chunks before game start (if `MCSRSWAP_CHUNKY_PRELOAD=true`)
+  - **Glacier** – World-generation performance optimizations (legal for 1.16.1)
 - **Storage**: Bind-mount directories under `GAME_DATA_DIR` (e.g. `./data/game1/`)
 - **User**: Inherits `PUID`/`PGID` from Velocity container environment
 - **Lifecycle**:
@@ -96,9 +97,9 @@ MCSR-Swap supports an optional Docker deployment mode where the Velocity plugin 
 1. **Cleanup existing**: Remove old game containers + data directories
 2. **Generate seeds**: Random or paired (versus mode)
 3. **Spawn containers**: One per player (or per team in versus)
-4. **Wait for health**: Docker health-check polls until server is ready (max 2 min)
-5. **Ping verification**: Velocity pings each server to confirm connectivity
-6. **Chunky preload** *(if `MCSRSWAP_CHUNKY_PRELOAD=true`)*: Send `/chunky start` via RCON, poll for completion file; proceeds after all worlds are pre-generated or timeout is reached
+4. **Wait for health**: Docker health-check polls until server is ready (max 5 min)
+5. **Ping verification**: Velocity pings each server and completes as soon as all pings answer
+6. **Chunky preload** *(if `MCSRSWAP_CHUNKY_PRELOAD=true`)*: The Fabric mod starts `/chunky`; Velocity watches the `.mcsrswap-ready` files and proceeds when all exist or the timeout is reached
 7. **Route players**: Send each player to their assigned server; Fabric mod freezes world (Carpet `/tick freeze`) until the player arrives
 8. **Start rotation timer**: Begin countdown
 

@@ -22,6 +22,8 @@ import java.nio.file.*;
 import java.time.Duration;
 import java.util.*;
 import java.util.Arrays;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import net.kyori.adventure.text.Component;
@@ -51,6 +53,32 @@ public class VelocitySwapPlugin {
     int currentTime;
     GameState gameState = GameState.LOBBY;
 
+    /**
+     * Monotonic deadline for the current round. The visible countdown is derived from this value
+     * instead of decrementing a counter once per scheduler tick, so scheduler jitter does not make
+     * rotations drift.
+     */
+    private long roundDeadlineNanos;
+
+    /** True once the pre-rotation camera release has been sent for the current round. */
+    private boolean preRotationDone;
+
+    /** Servers whose Fabric mod has announced save-before-rotation support. */
+    private final Set<String> saveAckServers = ConcurrentHashMap.newKeySet();
+
+    /** In-flight save acknowledgements, keyed by request id. */
+    private final Map<String, CompletableFuture<Boolean>> pendingSaveAcks =
+            new ConcurrentHashMap<>();
+
+    /**
+     * Experimental: when true, a swap may save the slot on the old server and connect directly to
+     * the next one if (and only if) the target server has no active player. A normal ring rotation
+     * always keeps the target occupied for a moment, so it uses the limbo transit instead — this
+     * avoids showing the outgoing player's body to the arriving player. Enable with {@code
+     * MCSRSWAP_DIRECT_ROTATION=true}.
+     */
+    private boolean directRotation = false;
+
     final Map<UUID, String> playerServer = new HashMap<>();
     final Set<String> finishedServers = new HashSet<>();
 
@@ -58,8 +86,8 @@ public class VelocitySwapPlugin {
     final Set<UUID> activePlayers = new HashSet<>();
 
     /**
-     * Players who have opted out of the next game start. Populated from config/env at load time
-     * and toggled at runtime via {@code /ms ignore}. Persists until toggled back.
+     * Players who have opted out of the next game start. Populated from config/env at load time and
+     * toggled at runtime via {@code /ms ignore}. Persists until toggled back.
      */
     final Set<UUID> ignoredPlayers = new HashSet<>();
 
@@ -104,9 +132,6 @@ public class VelocitySwapPlugin {
      */
     private final Set<UUID> pendingReconnect = new HashSet<>();
 
-    /** Servers that have sent a "ready" signal after startup. */
-    final Set<String> readyServers = new HashSet<>();
-
     /**
      * Players who have clicked "Yes" in the ready-check prompt (populated during READY_CHECK).
      * Cleared when entering or leaving READY_CHECK.
@@ -135,6 +160,7 @@ public class VelocitySwapPlugin {
     boolean dockerMode = false;
     boolean startedWithClean = false;
     private PluginConfig config;
+
     /** Mutable per-slot seed overrides (0-based). Extends/shrinks as needed via /ms seed. */
     List<Long> worldSeeds = new ArrayList<>();
 
@@ -165,9 +191,11 @@ public class VelocitySwapPlugin {
                                             logger.error("Error during shutdown cleanup", e);
                                         }
                                     }));
-            // Pull latest image in background during startup (skip if MCSRSWAP_PULL_GAME_IMAGE=false)
+            // Pull latest image in background during startup (skip if
+            // MCSRSWAP_PULL_GAME_IMAGE=false)
             String pullEnv = System.getenv("MCSRSWAP_PULL_GAME_IMAGE");
-            boolean pullImage = pullEnv == null || (!pullEnv.equalsIgnoreCase("false") && !pullEnv.equals("0"));
+            boolean pullImage =
+                    pullEnv == null || (!pullEnv.equalsIgnoreCase("false") && !pullEnv.equals("0"));
             if (pullImage) {
                 java.util.concurrent.CompletableFuture.runAsync(
                         () -> {
@@ -232,9 +260,13 @@ public class VelocitySwapPlugin {
                                 + "  enabled: false\n"
                                 + "  image: ghcr.io/igelway/mcsr-swap-gameserver:latest\n"
                                 + "  network: mcsrswap-network\n"
-                                + "  dataPath: ./data\n"
-                                + " ./data/game{N}), "
-                                + " (~/.local/share/mcsrswap/servers)\n";
+                                + "  # Absolute path on the Docker host. Defaults to GAME_DATA_DIR.\n"
+                                + "  # gameDataDir: /absolute/path/to/game-data\n"
+                                + "  # autoStopLobby: false\n"
+                                + "  # externalServers:\n"
+                                + "  #   - name: game3\n"
+                                + "  #     host: 192.168.1.200\n"
+                                + "  #     port: 25602\n";
 
                 Files.writeString(configFile, defaultConfig);
             }
@@ -270,6 +302,10 @@ public class VelocitySwapPlugin {
             saveHotbar = cfg.saveHotbar;
             eyeHoverTicks = cfg.eyeHoverTicks;
             worldSeeds = new ArrayList<>(cfg.worldSeeds);
+            String envDirectRotation = System.getenv("MCSRSWAP_DIRECT_ROTATION");
+            if (envDirectRotation != null && !envDirectRotation.isBlank()) {
+                directRotation = envDirectRotation.equalsIgnoreCase("true");
+            }
 
             // language from typed config (normalize to filename)
             String languageFile =
@@ -300,7 +336,10 @@ public class VelocitySwapPlugin {
                             limboHost,
                             limboPort);
                 } catch (Exception e) {
-                    logger.warn("Could not register limbo server '{}': {}", limboServerName, e.getMessage());
+                    logger.warn(
+                            "Could not register limbo server '{}': {}",
+                            limboServerName,
+                            e.getMessage());
                 }
             }
 
@@ -371,65 +410,13 @@ public class VelocitySwapPlugin {
                 .buildTask(
                         this,
                         () -> {
-                            try {
-                                var luckPerms = server.getPluginManager().getPlugin("luckperms");
-                                if (luckPerms.isEmpty()) {
-                                    logger.warn(
-                                            "LuckPerms not loaded - admin permissions not set!");
-                                    return;
-                                }
-
-                                net.luckperms.api.LuckPerms api =
-                                        net.luckperms.api.LuckPermsProvider.get();
-
-                                for (String playerName : adminPlayers) {
-                                    try {
-                                        UUID uuid;
-                                        try {
-                                            uuid = UUID.fromString(playerName);
-                                        } catch (IllegalArgumentException e) {
-                                            uuid =
-                                                    api.getUserManager()
-                                                            .lookupUniqueId(playerName)
-                                                            .get();
-                                        }
-                                        if (uuid == null) {
-                                            logger.warn(
-                                                    "Could not find UUID for admin: {}",
-                                                    playerName);
-                                            continue;
-                                        }
-
-                                        var user = api.getUserManager().loadUser(uuid).get();
-                                        if (user == null) {
-                                            logger.warn(
-                                                    "Could not load user data for admin: {}",
-                                                    playerName);
-                                            continue;
-                                        }
-
-                                        user.data()
-                                                .add(
-                                                        net.luckperms.api.node.Node.builder(
-                                                                        "swap.admin")
-                                                                .build());
-                                        api.getUserManager().saveUser(user);
-                                        logger.info(
-                                                "Granted swap.admin permission to: {} ({})",
-                                                playerName,
-                                                uuid);
-
-                                    } catch (Exception e) {
-                                        logger.error(
-                                                "Failed to set admin permissions for {}: {}",
-                                                playerName,
-                                                e.getMessage());
-                                    }
-                                }
-                            } catch (Exception e) {
-                                logger.error(
-                                        "Failed to setup admin permissions: {}", e.getMessage());
+                            // Check before touching LuckPermsHook so its LuckPerms classes are
+                            // never loaded on servers without LuckPerms.
+                            if (server.getPluginManager().getPlugin("luckperms").isEmpty()) {
+                                logger.warn("LuckPerms not loaded - admin permissions not set!");
+                                return;
                             }
+                            LuckPermsHook.setupAdmins(logger, adminPlayers);
                         })
                 .delay(2, TimeUnit.SECONDS)
                 .schedule();
@@ -468,28 +455,45 @@ public class VelocitySwapPlugin {
                         () -> {
                             if (gameState != GameState.RUNNING) return;
 
-                            currentTime--;
+                            int remaining = secondsRemaining();
 
-                            if (currentTime <= 0) {
+                            if (remaining <= 0) {
                                 // Show 0 on the old server to complete the visual countdown,
-                                // then trigger rotation. The new countdown is sent to the new
-                                // server via sendTimeToPlayer() in ServerConnectedEvent.
+                                // then trigger rotation. The new countdown starts immediately.
                                 currentTime = 0;
                                 broadcastTime();
                                 rotatePlayers();
-                                currentTime = rotationTime;
+                                startRound();
                                 return;
-                            } else if (currentTime == 2
+                            }
+
+                            if (!preRotationDone
+                                    && remaining <= 2
                                     && spectateAfterWin
                                     && !watchingPlayers.isEmpty()) {
+                                preRotationDone = true;
                                 preRotation();
                             }
 
+                            currentTime = remaining;
                             broadcastTime();
                         })
                 .delay(300, TimeUnit.MILLISECONDS)
                 .repeat(1, TimeUnit.SECONDS)
                 .schedule();
+    }
+
+    /** Resets the round clock. The countdown is derived from a monotonic deadline. */
+    private void startRound() {
+        currentTime = rotationTime;
+        preRotationDone = false;
+        roundDeadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(rotationTime);
+    }
+
+    /** Whole seconds left in the current round, rounded up. */
+    private int secondsRemaining() {
+        long remaining = roundDeadlineNanos - System.nanoTime();
+        return (int) Math.max(0L, (remaining + 999_999_999L) / 1_000_000_000L);
     }
 
     // =========================
@@ -515,99 +519,243 @@ public class VelocitySwapPlugin {
             String next = servers.get(index);
             playerServer.put(uuid, next);
 
-            watchingPlayers.remove(uuid);
+            boolean wasWatching = watchingPlayers.remove(uuid) != null;
+            if (wasWatching) {
+                // The scheduled pre-rotation did not cover this watcher (e.g. they finished very
+                // late). Release the camera lock now; the connection switch follows immediately.
+                sendPrepareReturn(player);
+            }
 
             // Player is mid-reconnect (currently in lobby or en-route): advance their assignment
-            // but skip the lobby-connection request. forwardFromLobby() will be called from
-            // onServerConnected when they land on the lobby.
+            // but skip the connection request. onServerConnected() forwards them once they land.
             if (pendingReconnect.contains(uuid)) {
                 continue;
             }
 
             final String nextServer = next;
-            server.getServer(getTransitServer())
-                    .ifPresent(
-                            lobby ->
-                                    player.createConnectionRequest(lobby)
-                                            .connect()
-                                            .thenAcceptAsync(
-                                                    result -> {
-                                                        if (!result.isSuccessful()) {
-                                                            logger.warn(
-                                                                    "Failed to route {} to transit"
-                                                                            + " server during"
-                                                                            + " rotation",
-                                                                    player.getUsername());
-                                                            return;
-                                                        }
-                                                        // Player arrived at transit server; slot .dat was
-                                                        // written on game-server disconnect.
-                                                        // Now forward to next game server.
-                                                        forwardFromLobby(player, nextServer);
-                                                    },
-                                                    runnable ->
-                                                            server.getScheduler()
-                                                                    .buildTask(this, runnable)
-                                                                    .schedule()));
+            if (canRotateDirectly(player, nextServer)) {
+                requestSave(player)
+                        .thenAcceptAsync(
+                                saved -> {
+                                    if (saved) {
+                                        connectDirect(player, nextServer);
+                                    } else {
+                                        connectViaTransit(player, nextServer);
+                                    }
+                                },
+                                this::runOnVelocityThread);
+            } else {
+                connectViaTransit(player, nextServer);
+            }
         }
 
         logger.info("Swapping!");
     }
 
-    private void forwardFromLobby(Player player, String nextServer) {
-        if (spectateAfterWin
-                && getTeamFinished(player.getUniqueId()).contains(nextServer)) {
-            String spectateServer =
-                    findSpectateTarget(player.getUniqueId(), nextServer);
-            if (spectateServer != null) {
-                watchingPlayers.put(player.getUniqueId(), nextServer);
-                server.getServer(spectateServer)
-                        .ifPresent(s -> player.createConnectionRequest(s).fireAndForget());
-                return;
-            }
-        }
-        server.getServer(nextServer)
-                .ifPresent(s -> player.createConnectionRequest(s).fireAndForget());
+    /**
+     * A direct Game→Game switch is only safe when the target server is empty. In the normal ring
+     * rotation the outgoing player of the target is still connected for a moment, and the arriving
+     * player would see their body. Waiting for that player to leave would deadlock the ring, so
+     * occupied targets always go through the limbo transit.
+     */
+    private boolean canRotateDirectly(Player player, String nextServer) {
+        if (!directRotation || !canSaveBeforeRotation(player)) return false;
+        return server.getServer(nextServer)
+                .map(
+                        target ->
+                                target.getPlayersConnected().stream()
+                                        .noneMatch(
+                                                other ->
+                                                        activePlayers.contains(
+                                                                other.getUniqueId())))
+                .orElse(false);
+    }
+
+    /** True if the player's current backend can save its slot synchronously before a swap. */
+    private boolean canSaveBeforeRotation(Player player) {
+        return player.getCurrentServer()
+                .map(
+                        connection -> {
+                            String name = connection.getServerInfo().getName();
+                            return gameServers.contains(name) && saveAckServers.contains(name);
+                        })
+                .orElse(false);
     }
 
     /**
-     * Called 2 seconds before rotation. Routes every watching player back to their own assigned
-     * server so they arrive as a normal survival player. Sends {@code prepare_return} first to
-     * release the spectator camera lock on the Fabric side before the connection is switched.
+     * Asks the current backend to flush the slot .dat and waits for its acknowledgement. This is a
+     * query, not a fixed delay: a server that does not understand the request never announces
+     * support and therefore never takes this path.
+     */
+    private CompletableFuture<Boolean> requestSave(Player player) {
+        java.util.Optional<ServerConnection> connection = player.getCurrentServer();
+        if (connection.isEmpty()) return CompletableFuture.completedFuture(false);
+
+        String requestId = UUID.randomUUID().toString();
+        CompletableFuture<Boolean> acknowledgement = new CompletableFuture<>();
+        pendingSaveAcks.put(requestId, acknowledgement);
+
+        boolean sent =
+                connection
+                        .get()
+                        .sendPluginMessage(
+                                CHANNEL,
+                                buildMessage(
+                                        out -> {
+                                            out.writeUTF("save");
+                                            out.writeUTF(player.getUniqueId().toString());
+                                            out.writeUTF(requestId);
+                                        }));
+        if (!sent) {
+            pendingSaveAcks.remove(requestId);
+            return CompletableFuture.completedFuture(false);
+        }
+
+        return acknowledgement
+                .orTimeout(500, TimeUnit.MILLISECONDS)
+                .exceptionally(
+                        error -> {
+                            pendingSaveAcks.remove(requestId);
+                            logger.warn(
+                                    "Timed out waiting for save acknowledgement from {};"
+                                            + " falling back to transit",
+                                    connection.get().getServerInfo().getName());
+                            return false;
+                        });
+    }
+
+    /** Game → game without the limbo hop. The slot was saved by {@link #requestSave}. */
+    private void connectDirect(Player player, String nextServer) {
+        if (!player.isActive()) return;
+        String target = resolveTarget(player, nextServer);
+        server.getServer(target)
+                .ifPresent(
+                        registered ->
+                                player.createConnectionRequest(registered)
+                                        .connect()
+                                        .thenAcceptAsync(
+                                                result -> {
+                                                    if (result.isSuccessful()) return;
+                                                    logger.warn(
+                                                            "Direct rotation of {} to {} failed;"
+                                                                    + " falling back to transit",
+                                                            player.getUsername(),
+                                                            nextServer);
+                                                    connectViaTransit(player, nextServer);
+                                                },
+                                                this::runOnVelocityThread));
+    }
+
+    /** Game → limbo → game. Used when the old backend cannot save on request. */
+    private void connectViaTransit(Player player, String nextServer) {
+        if (!player.isActive()) return;
+        server.getServer(getTransitServer())
+                .ifPresent(
+                        transit ->
+                                player.createConnectionRequest(transit)
+                                        .connect()
+                                        .thenAcceptAsync(
+                                                result -> {
+                                                    if (!result.isSuccessful()) {
+                                                        logger.warn(
+                                                                "Failed to route {} to transit"
+                                                                        + " server during"
+                                                                        + " rotation",
+                                                                player.getUsername());
+                                                        return;
+                                                    }
+                                                    forwardFromLobby(player, nextServer);
+                                                },
+                                                this::runOnVelocityThread));
+    }
+
+    private void runOnVelocityThread(Runnable runnable) {
+        server.getScheduler().buildTask(this, runnable).schedule();
+    }
+
+    /**
+     * Second half of the transit rotation. Waits until the target server no longer has an active
+     * player, so the outgoing player's body has been removed before the new player arrives. The
+     * wait is a query with a short upper bound; an empty target connects immediately.
+     */
+    private void forwardFromLobby(Player player, String nextServer) {
+        String target = resolveTarget(player, nextServer);
+        waitForTargetFree(player, target, 0);
+    }
+
+    private void waitForTargetFree(Player player, String target, int attempt) {
+        if (!player.isActive()) return;
+
+        boolean free =
+                server.getServer(target)
+                        .map(
+                                registered ->
+                                        registered.getPlayersConnected().stream()
+                                                .noneMatch(
+                                                        other ->
+                                                                activePlayers.contains(
+                                                                        other.getUniqueId())))
+                        .orElse(true);
+
+        if (!free && attempt < 15) {
+            server.getScheduler()
+                    .buildTask(this, () -> waitForTargetFree(player, target, attempt + 1))
+                    .delay(50, TimeUnit.MILLISECONDS)
+                    .schedule();
+            return;
+        }
+
+        server.getServer(target).ifPresent(s -> player.createConnectionRequest(s).fireAndForget());
+    }
+
+    /**
+     * Resolves the server the player should actually land on. If their next world is already
+     * finished and spectating is enabled, this is the spectate target instead.
+     */
+    private String resolveTarget(Player player, String nextServer) {
+        if (spectateAfterWin && getTeamFinished(player.getUniqueId()).contains(nextServer)) {
+            String spectateServer = findSpectateTarget(player.getUniqueId(), nextServer);
+            if (spectateServer != null) {
+                watchingPlayers.put(player.getUniqueId(), nextServer);
+                // Pre-notify so the Fabric side never loads the slot data for the watcher.
+                server.getServer(spectateServer)
+                        .ifPresent(
+                                rs ->
+                                        sendToServer(
+                                                rs,
+                                                buildMessage(
+                                                        out -> {
+                                                            out.writeUTF("incoming_spectator");
+                                                            out.writeUTF(
+                                                                    player.getUniqueId()
+                                                                            .toString());
+                                                        })));
+                return spectateServer;
+            }
+        }
+        return nextServer;
+    }
+
+    /**
+     * Called shortly before rotation. Releases the spectator camera lock on the spectate server so
+     * the client is not stuck when the server switch happens. The reconnection itself is handled by
+     * {@link #rotatePlayers()} without an intermediate hop back through the old server.
      */
     private void preRotation() {
-        for (Map.Entry<UUID, String> entry : new ArrayList<>(watchingPlayers.entrySet())) {
-            UUID watcherUuid = entry.getKey();
+        for (UUID watcherUuid : new ArrayList<>(watchingPlayers.keySet())) {
             watchingPlayers.remove(watcherUuid);
-            String home = playerServer.get(watcherUuid);
-            if (home == null) continue;
-            server.getPlayer(watcherUuid)
-                    .ifPresent(
-                            p -> {
-                                // Release camera lock on the spectate server first.
-                                sendToBackend(
-                                        p,
-                                        buildMessage(
-                                                out -> {
-                                                    out.writeUTF("prepare_return");
-                                                    out.writeUTF(p.getUniqueId().toString());
-                                                }));
-                                // Short delay lets the client receive the camera-release packet
-                                // before we disconnect them.
-                                server.getServer(home)
-                                        .ifPresent(
-                                                s ->
-                                                        server.getScheduler()
-                                                                .buildTask(
-                                                                        this,
-                                                                        () ->
-                                                                                p.createConnectionRequest(
-                                                                                                s)
-                                                                                        .fireAndForget())
-                                                                .delay(300, TimeUnit.MILLISECONDS)
-                                                                .schedule());
-                            });
+            server.getPlayer(watcherUuid).ifPresent(this::sendPrepareReturn);
         }
+    }
+
+    private void sendPrepareReturn(Player player) {
+        sendToBackend(
+                player,
+                buildMessage(
+                        out -> {
+                            out.writeUTF("prepare_return");
+                            out.writeUTF(player.getUniqueId().toString());
+                        }));
     }
 
     /**
@@ -683,8 +831,8 @@ public class VelocitySwapPlugin {
     }
 
     /**
-     * Returns the transit server used to buffer players between game servers during rotation.
-     * Uses the limbo server if it is registered with Velocity; falls back to the lobby.
+     * Returns the transit server used to buffer players between game servers during rotation. Uses
+     * the limbo server if it is registered with Velocity; falls back to the lobby.
      */
     private String getTransitServer() {
         if (server.getServer(limboServerName).isPresent()) {
@@ -695,9 +843,7 @@ public class VelocitySwapPlugin {
 
     /** Returns lobby players who should participate in the next game start. */
     List<Player> getStartParticipants() {
-        return getLobbyPlayers().stream()
-                .filter(p -> !isIgnored(p))
-                .collect(Collectors.toList());
+        return getLobbyPlayers().stream().filter(p -> !isIgnored(p)).collect(Collectors.toList());
     }
 
     /**
@@ -712,8 +858,22 @@ public class VelocitySwapPlugin {
     }
 
     private void sendToBackend(Player player, byte[] data) {
-        player.getCurrentServer()
-                .ifPresent(conn -> conn.sendPluginMessage(CHANNEL, data));
+        player.getCurrentServer().ifPresent(conn -> conn.sendPluginMessage(CHANNEL, data));
+    }
+
+    /**
+     * Sends directly to a known server connection. Unlike {@link #sendToBackend(Player, byte[])},
+     * this does not re-resolve {@code player.getCurrentServer()} and is safe to call from a
+     * connection event.
+     */
+    private boolean sendToServer(RegisteredServer target, byte[] data) {
+        if (target == null) return false;
+        boolean sent = target.sendPluginMessage(CHANNEL, data);
+        if (!sent) {
+            logger.warn(
+                    "Could not send plugin message to server {}", target.getServerInfo().getName());
+        }
+        return sent;
     }
 
     private byte[] buildMessage(java.util.function.Consumer<ByteArrayDataOutput> writer) {
@@ -723,6 +883,10 @@ public class VelocitySwapPlugin {
     }
 
     private void sendProgressToPlayer(Player player) {
+        sendToBackend(player, progressMessage(player));
+    }
+
+    private byte[] progressMessage(Player player) {
         Set<String> teamFinished;
         List<String> teamServers;
         if (versusMode) {
@@ -743,24 +907,24 @@ public class VelocitySwapPlugin {
         }
         int required = (int) Math.ceil(teamServers.size() * requiredPercentage);
         final int done = teamFinished.size();
-        sendToBackend(
-                player,
-                buildMessage(
-                        out -> {
-                            out.writeUTF("progress");
-                            out.writeInt(done);
-                            out.writeInt(required);
-                        }));
+        return buildMessage(
+                out -> {
+                    out.writeUTF("progress");
+                    out.writeInt(done);
+                    out.writeInt(required);
+                });
     }
 
     private void sendTimeToPlayer(Player player) {
-        sendToBackend(
-                player,
-                buildMessage(
-                        out -> {
-                            out.writeUTF("time");
-                            out.writeInt(currentTime);
-                        }));
+        sendToBackend(player, timeMessage(currentTime));
+    }
+
+    private byte[] timeMessage(int time) {
+        return buildMessage(
+                out -> {
+                    out.writeUTF("time");
+                    out.writeInt(time);
+                });
     }
 
     private void broadcastTime() {
@@ -796,30 +960,10 @@ public class VelocitySwapPlugin {
                 .buildTask(
                         this,
                         () -> {
-                            try {
-                                var lpPlugin = server.getPluginManager().getPlugin("luckperms");
-                                if (lpPlugin.isEmpty()) return;
-                                net.luckperms.api.LuckPerms api =
-                                        net.luckperms.api.LuckPermsProvider.get();
-                                var user =
-                                        api.getUserManager()
-                                                .loadUser(player.getUniqueId())
-                                                .get();
-                                if (user == null) return;
-                                net.luckperms.api.node.Node node =
-                                        net.luckperms.api.node.Node.builder("swap.admin").build();
-                                if (!user.data().contains(node, net.luckperms.api.node.NodeEqualityPredicate.IGNORE_EXPIRY_TIME).asBoolean()) {
-                                    user.data().add(node);
-                                    api.getUserManager().saveUser(user);
-                                    logger.info(
-                                            "Granted swap.admin to {} ({})",
-                                            name,
-                                            player.getUniqueId());
-                                }
-                            } catch (Exception e) {
-                                logger.error(
-                                        "Failed to grant swap.admin to {}: {}", name, e.getMessage());
+                            if (server.getPluginManager().getPlugin("luckperms").isEmpty()) {
+                                return;
                             }
+                            LuckPermsHook.grantAdmin(logger, player);
                         })
                 .delay(1, TimeUnit.SECONDS)
                 .schedule();
@@ -840,18 +984,25 @@ public class VelocitySwapPlugin {
 
         ByteArrayDataInput in = ByteStreams.newDataInput(event.getData());
         String sub = in.readUTF();
+        event.setResult(PluginMessageEvent.ForwardResult.handled());
 
-        if (sub.equals("ready")) {
-            event.setResult(PluginMessageEvent.ForwardResult.handled());
-            readyServers.add(serverName);
-            logger.info(
-                    "Server '{}' is ready ({}/{} servers ready)",
-                    serverName,
-                    readyServers.size(),
-                    gameServers.size());
-        } else if (sub.equals("finish")) {
-            event.setResult(PluginMessageEvent.ForwardResult.handled());
-            handleFinish(serverName);
+        switch (sub) {
+            case "hello":
+                if (saveAckServers.add(serverName)) {
+                    logger.info("Server '{}' supports save-before-rotation", serverName);
+                }
+                return;
+            case "save_ack":
+                {
+                    CompletableFuture<Boolean> pending = pendingSaveAcks.remove(in.readUTF());
+                    if (pending != null) pending.complete(true);
+                    return;
+                }
+            case "finish":
+                handleFinish(serverName);
+                return;
+            default:
+                logger.debug("Ignoring unknown plugin message '{}' from {}", sub, serverName);
         }
     }
 
@@ -888,7 +1039,8 @@ public class VelocitySwapPlugin {
                                                                                             .isSuccessful()) {
                                                                                         logger.warn(
                                                                                                 "Failed to forward reconnecting player {} to {}",
-                                                                                                player.getUsername(),
+                                                                                                player
+                                                                                                        .getUsername(),
                                                                                                 nextServer);
                                                                                     }
                                                                                 },
@@ -904,85 +1056,65 @@ public class VelocitySwapPlugin {
         }
         if (!activePlayers.contains(player.getUniqueId())) return;
 
+        RegisteredServer target = event.getServer();
+
         // Watching player: tell the Fabric server to put them in locked spectator mode.
         // incoming_spectator was already sent as a pre-notification (see handleFinish), so the
         // Fabric ENTITY_LOAD handler can act immediately. This message is the fallback.
         if (watchingPlayers.containsKey(player.getUniqueId())) {
-            final UUID uuid = player.getUniqueId();
-            final byte[] becomeSpectatorMsg =
+            UUID uuid = player.getUniqueId();
+            sendToServer(
+                    target,
                     buildMessage(
                             out -> {
                                 out.writeUTF("become_spectator");
                                 out.writeUTF(uuid.toString());
-                            });
-            // Retry at three increasing delays: getCurrentServer() is not populated at time 0,
-            // and on slower servers ENTITY_LOAD may not have fired yet at 50 ms.
-            for (int delayMs : new int[] {50, 200, 500}) {
-                server.getScheduler()
-                        .buildTask(this, () -> sendToBackend(player, becomeSpectatorMsg))
-                        .delay(delayMs, TimeUnit.MILLISECONDS)
-                        .schedule();
-            }
+                            }));
             return; // no state sync for watchers
         }
 
-        // Always send server-specific config when connecting to any game server.
-        // Schedule with a short delay: ServerConnectedEvent fires before
-        // player.getCurrentServer() is populated, so a direct send would fail.
+        // Always send server-specific config when connecting to any game server. The event's
+        // server is the established target connection, so no delay or re-resolution is needed.
         final int eyeTicks = eyeHoverTicks;
         final String slotUuidStr =
-                java.util.UUID.nameUUIDFromBytes(
+                java.util
+                        .UUID
+                        .nameUUIDFromBytes(
                                 ("mcsrswap-slot-" + serverName)
                                         .getBytes(java.nio.charset.StandardCharsets.UTF_8))
                         .toString();
-        // On game start only: savehotbar + reset
         final boolean doReset =
-                gameState == GameState.RUNNING && pendingReset.remove(player.getUniqueId());
+                gameState == GameState.RUNNING && pendingReset.contains(player.getUniqueId());
         final boolean hotbar = saveHotbar;
-        server.getScheduler()
-                .buildTask(
-                        this,
-                        () -> {
-                            sendToBackend(
-                                    player,
-                                    buildMessage(
-                                            out -> {
-                                                out.writeUTF("eyehoverticks");
-                                                out.writeInt(eyeTicks);
-                                            }));
-                            sendToBackend(
-                                    player,
-                                    buildMessage(
-                                            out -> {
-                                                out.writeUTF("slot_uuid");
-                                                out.writeUTF(slotUuidStr);
-                                            }));
-                            if (doReset) {
-                                sendToBackend(
-                                        player,
-                                        buildMessage(
-                                                out -> {
-                                                    out.writeUTF("savehotbar");
-                                                    out.writeBoolean(hotbar);
-                                                }));
-                                sendToBackend(
-                                        player, buildMessage(out -> out.writeUTF("reset")));
-                            }
-                        })
-                .delay(50, TimeUnit.MILLISECONDS)
-                .schedule();
 
-        // Always send the current state – with a short delay so the backend connection
-        // is stable and ENTITY_LOAD on the Fabric server has already fired.
-        server.getScheduler()
-                .buildTask(
-                        this,
-                        () -> {
-                            sendProgressToPlayer(player);
-                            sendTimeToPlayer(player);
-                        })
-                .delay(50, TimeUnit.MILLISECONDS)
-                .schedule();
+        sendToServer(
+                target,
+                buildMessage(
+                        out -> {
+                            out.writeUTF("eyehoverticks");
+                            out.writeInt(eyeTicks);
+                        }));
+        sendToServer(
+                target,
+                buildMessage(
+                        out -> {
+                            out.writeUTF("slot_uuid");
+                            out.writeUTF(slotUuidStr);
+                        }));
+        if (doReset) {
+            sendToServer(
+                    target,
+                    buildMessage(
+                            out -> {
+                                out.writeUTF("savehotbar");
+                                out.writeBoolean(hotbar);
+                            }));
+            sendToServer(target, buildMessage(out -> out.writeUTF("reset")));
+            pendingReset.remove(player.getUniqueId());
+        }
+
+        sendToServer(target, progressMessage(player));
+        sendToServer(target, timeMessage(currentTime));
     }
 
     private void handleFinish(String serverName) {
@@ -1030,7 +1162,7 @@ public class VelocitySwapPlugin {
 
         // If spectateAfterWin is enabled and there is enough time left in the rotation,
         // send the player who just finished to spectate an adjacent server.
-        if (spectateAfterWin && currentTime >= 5) {
+        if (spectateAfterWin && secondsRemaining() >= 5) {
             for (Map.Entry<UUID, String> e : playerServer.entrySet()) {
                 if (!serverName.equals(e.getValue())) continue;
                 UUID uuid = e.getKey();
@@ -1042,25 +1174,19 @@ public class VelocitySwapPlugin {
 
                 // Pre-notify the spectate server BEFORE the watcher connects, so the Fabric
                 // ENTITY_LOAD handler can immediately put them in spectator mode and skip the
-                // normal state restore. We relay the message through any player already there.
+                // normal state restore. Send through the server connection itself instead of
+                // relying on a relay player being online.
                 final UUID finalUuid = uuid;
                 server.getServer(spectateServer)
                         .ifPresent(
                                 rs ->
-                                        rs.getPlayersConnected().stream()
-                                                .findFirst()
-                                                .ifPresent(
-                                                        relay ->
-                                                                sendToBackend(
-                                                                        relay,
-                                                                        buildMessage(
-                                                                                out -> {
-                                                                                    out.writeUTF(
-                                                                                            "incoming_spectator");
-                                                                                    out.writeUTF(
-                                                                                            finalUuid
-                                                                                                    .toString());
-                                                                                }))));
+                                        sendToServer(
+                                                rs,
+                                                buildMessage(
+                                                        out -> {
+                                                            out.writeUTF("incoming_spectator");
+                                                            out.writeUTF(finalUuid.toString());
+                                                        })));
 
                 watchingPlayers.put(uuid, serverName);
                 server.getPlayer(uuid)
@@ -1225,8 +1351,7 @@ public class VelocitySwapPlugin {
                                 subs.retainAll(Arrays.asList("stop", "state", "player", "seed"));
                             } else if (state == GameState.PREPARING) {
                                 // /ms prepare in progress – can stop or clean up
-                                subs.retainAll(
-                                        Arrays.asList("stop", "cleanup", "state", "player"));
+                                subs.retainAll(Arrays.asList("stop", "cleanup", "state", "player"));
                             } else if (state == GameState.READY_CHECK) {
                                 // Waiting for players – admin can force-start, players can ready up
                                 subs.retainAll(
@@ -1291,8 +1416,7 @@ public class VelocitySwapPlugin {
 
                             case "ignore":
                                 // admins can target other players; self-toggle needs no arg
-                                if (args.length == 2 && admin)
-                                    return onlinePlayers(partial);
+                                if (args.length == 2 && admin) return onlinePlayers(partial);
                                 break;
 
                             case "setrotation":
@@ -1361,12 +1485,8 @@ public class VelocitySwapPlugin {
 
         detectServers();
 
-        // In Docker mode, servers are already healthy (checked by DockerServerManager)
-        // Mark them as ready
+        // In Docker mode, servers are already healthy (checked by DockerServerManager).
         if (dockerMode && dockerManager != null) {
-            for (String serverName : gameServers) {
-                readyServers.add(serverName);
-            }
             logger.info(
                     "All {} game servers are ready (Docker health check passed)",
                     gameServers.size());
@@ -1392,10 +1512,10 @@ public class VelocitySwapPlugin {
     }
 
     /**
-     * Assigns participants to servers, connects them, sets up the timer, and transitions to
-     * {@link GameState#RUNNING}. May be called from {@link #startGameInternal()} (normal start or
-     * Docker immediate) or directly from the READY_CHECK → RUNNING transition.
-     * Requires {@link #gameServers} to be non-empty.
+     * Assigns participants to servers, connects them, sets up the timer, and transitions to {@link
+     * GameState#RUNNING}. May be called from {@link #startGameInternal()} (normal start or Docker
+     * immediate) or directly from the READY_CHECK → RUNNING transition. Requires {@link
+     * #gameServers} to be non-empty.
      */
     void launchGame() {
         readyConfirmed.clear();
@@ -1413,6 +1533,8 @@ public class VelocitySwapPlugin {
         pendingReconnect.clear();
         finishedServersA.clear();
         finishedServersB.clear();
+        // Servers announce their support again when the first player joins this round.
+        saveAckServers.clear();
 
         if (versusMode) {
             if (gameServers.size() % 2 != 0) {
@@ -1444,9 +1566,13 @@ public class VelocitySwapPlugin {
 
             // Send team info + roster to all assigned players
             String rosterA =
-                    teamAPlayers.stream().map(Player::getUsername).collect(Collectors.joining(", "));
+                    teamAPlayers.stream()
+                            .map(Player::getUsername)
+                            .collect(Collectors.joining(", "));
             String rosterB =
-                    teamBPlayers.stream().map(Player::getUsername).collect(Collectors.joining(", "));
+                    teamBPlayers.stream()
+                            .map(Player::getUsername)
+                            .collect(Collectors.joining(", "));
             String rosterMsg =
                     "§7" + teamNameA + ": §f" + rosterA + " §7| " + teamNameB + ": §f" + rosterB;
             for (Player p : players) {
@@ -1471,7 +1597,7 @@ public class VelocitySwapPlugin {
             }
         }
 
-        currentTime = rotationTime;
+        startRound();
         gameState = GameState.RUNNING;
         pendingReset.addAll(playerServer.keySet());
 
@@ -1508,7 +1634,6 @@ public class VelocitySwapPlugin {
                                                 });
                             }
                         })
-                .delay(200, TimeUnit.MILLISECONDS)
                 .schedule();
 
         logger.info("Game started!");
@@ -1528,10 +1653,7 @@ public class VelocitySwapPlugin {
                                 if (gameState != GameState.RUNNING) return;
                                 boolean lobbyEmpty =
                                         server.getServer(lobbyServerName)
-                                                .map(
-                                                        rs ->
-                                                                rs.getPlayersConnected()
-                                                                        .isEmpty())
+                                                .map(rs -> rs.getPlayersConnected().isEmpty())
                                                 .orElse(true);
                                 if (lobbyEmpty) {
                                     dockerManager.stopLobbyContainer();
@@ -1567,8 +1689,7 @@ public class VelocitySwapPlugin {
     /** Sends the clickable ready-check prompt to a single player. */
     void sendReadyCheckPrompt(Player p) {
         net.kyori.adventure.text.Component yesButton =
-                net.kyori.adventure.text.Component.text(
-                                "[" + lang.get("ready_yes") + "]")
+                net.kyori.adventure.text.Component.text("[" + lang.get("ready_yes") + "]")
                         .color(net.kyori.adventure.text.format.NamedTextColor.GREEN)
                         .clickEvent(
                                 net.kyori.adventure.text.event.ClickEvent.runCommand("/ms ready"))
@@ -1591,13 +1712,11 @@ public class VelocitySwapPlugin {
         if (readyCheckParticipants.isEmpty()) return; // already started or cancelled
         UUID uuid = player.getUniqueId();
         if (!readyCheckParticipants.contains(uuid)) {
-            player.sendMessage(
-                    net.kyori.adventure.text.Component.text(lang.get("ready_already")));
+            player.sendMessage(net.kyori.adventure.text.Component.text(lang.get("ready_already")));
             return;
         }
         if (!readyConfirmed.add(uuid)) {
-            player.sendMessage(
-                    net.kyori.adventure.text.Component.text(lang.get("ready_already")));
+            player.sendMessage(net.kyori.adventure.text.Component.text(lang.get("ready_already")));
             return;
         }
         int count = readyConfirmed.size();
@@ -1605,16 +1724,18 @@ public class VelocitySwapPlugin {
         String msg =
                 lang.get(
                         "ready_player_ready",
-                        "player", player.getUsername(),
-                        "count", String.valueOf(count),
-                        "total", String.valueOf(total));
+                        "player",
+                        player.getUsername(),
+                        "count",
+                        String.valueOf(count),
+                        "total",
+                        String.valueOf(total));
         for (Player p : server.getAllPlayers()) {
             p.sendMessage(net.kyori.adventure.text.Component.text(msg));
         }
         if (count >= total) {
             for (Player p : server.getAllPlayers()) {
-                p.sendMessage(
-                        net.kyori.adventure.text.Component.text(lang.get("ready_all_ready")));
+                p.sendMessage(net.kyori.adventure.text.Component.text(lang.get("ready_all_ready")));
             }
             scheduleCountdownThenLaunch();
         }
@@ -1630,10 +1751,9 @@ public class VelocitySwapPlugin {
     }
 
     /**
-     * Cancels an in-progress PREPARING or READY_CHECK phase, resetting state to LOBBY.
-     * Also aborts any pending countdown (the countdown lambda checks for LOBBY state).
-     * Does NOT perform Docker cleanup — callers should call {@link WorldSwapCommands#cmdCleanup}
-     * separately.
+     * Cancels an in-progress PREPARING or READY_CHECK phase, resetting state to LOBBY. Also aborts
+     * any pending countdown (the countdown lambda checks for LOBBY state). Does NOT perform Docker
+     * cleanup — callers should call {@link WorldSwapCommands#cmdCleanup} separately.
      */
     void cancelPrepare() {
         if (gameState != GameState.PREPARING && gameState != GameState.READY_CHECK) return;
@@ -1648,10 +1768,10 @@ public class VelocitySwapPlugin {
     }
 
     /**
-     * Shows a 3-2-1 title countdown to all players, then calls {@link #launchGame()}.
-     * Idempotent: if a countdown is already in progress this call is a no-op.
-     * The launch is aborted if the game state returns to LOBBY before the countdown ends
-     * (e.g. because an admin ran /ms stop or /ms cleanup during the 3-second window).
+     * Shows a 3-2-1 title countdown to all players, then calls {@link #launchGame()}. Idempotent:
+     * if a countdown is already in progress this call is a no-op. The launch is aborted if the game
+     * state returns to LOBBY before the countdown ends (e.g. because an admin ran /ms stop or /ms
+     * cleanup during the 3-second window).
      */
     void scheduleCountdownThenLaunch() {
         if (countdownRunning) return;
@@ -1661,11 +1781,7 @@ public class VelocitySwapPlugin {
                 Title.Times.of(Duration.ZERO, Duration.ofMillis(800), Duration.ofMillis(300));
         for (int i = 3; i >= 1; i--) {
             final long delaySec = 3 - i;
-            final Title title =
-                    Title.title(
-                            Component.text("§a" + i),
-                            Component.empty(),
-                            times);
+            final Title title = Title.title(Component.text("§a" + i), Component.empty(), times);
             server.getScheduler()
                     .buildTask(
                             this,
@@ -1709,8 +1825,12 @@ public class VelocitySwapPlugin {
 
     void forceSwap() {
         if (gameState != GameState.RUNNING) return;
+        if (spectateAfterWin && !watchingPlayers.isEmpty()) {
+            preRotationDone = true;
+            preRotation();
+        }
         rotatePlayers();
-        currentTime = rotationTime;
+        startRound();
     }
 
     private void teamWins(String team) {
@@ -1757,8 +1877,7 @@ public class VelocitySwapPlugin {
                                                                                         .getName()
                                                                                         .equals(
                                                                                                 limboServerName))
-                                                                .ifPresent(
-                                                                        cs -> sendToLobby(p));
+                                                                .ifPresent(cs -> sendToLobby(p));
                                                     }
                                                 })
                                         .delay(10, TimeUnit.SECONDS)
@@ -1823,8 +1942,7 @@ public class VelocitySwapPlugin {
                                                                                         .getName()
                                                                                         .equals(
                                                                                                 limboServerName))
-                                                                .ifPresent(
-                                                                        cs -> sendToLobby(p));
+                                                                .ifPresent(cs -> sendToLobby(p));
                                                     }
                                                 })
                                         .delay(10, TimeUnit.SECONDS)

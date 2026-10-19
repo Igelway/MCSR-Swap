@@ -3,10 +3,12 @@ package de.mcsrswap.mixin;
 import de.mcsrswap.SwapMod;
 import net.minecraft.entity.Entity;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(ServerPlayerEntity.class)
 public class SpectatorLockMixin {
@@ -26,5 +28,11 @@ public class SpectatorLockMixin {
         if (entity == (Object) self && SwapMod.isSpectatorLocked(self.getUuid())) {
             ci.cancel();
         }
+    }
+
+    /** Notifies the mod after a player has changed dimension, with the new world already set. */
+    @Inject(method = "changeDimension", at = @At("TAIL"))
+    private void afterChangeDimension(ServerWorld destination, CallbackInfoReturnable<Entity> cir) {
+        SwapMod.onPlayerChangedDimension((ServerPlayerEntity) (Object) this);
     }
 }

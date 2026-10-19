@@ -25,7 +25,7 @@ Variables prefixed with `MCSRSWAP_GAME_` are forwarded to each spawned game serv
 
 ### Chunky pre-generation *(optional)*
 
-Requires `MCSRSWAP_CHUNKY_PRELOAD=true`. Chunky mod is bundled in the game server image. The server generates chunks on startup before signalling ready, which increases container start time.
+Requires `MCSRSWAP_CHUNKY_PRELOAD=true`. Chunky and Glacier (world-generation performance) are bundled in the game server image. The server generates chunks on startup before signalling ready, which increases container start time.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -41,6 +41,7 @@ Requires `MCSRSWAP_CHUNKY_PRELOAD=true`. Chunky mod is bundled in the game serve
 | `COMPOSE_PROFILES` | – | Set to `playit` to always start the playit.gg tunnel with `just up`. |
 | `GAME_DATA_DIR` | `./data` | Absolute host path for game server data directories. |
 | `MCSRSWAP_PULL_GAME_IMAGE` | `true` | Set to `false` to skip the automatic image pull on startup (useful with locally built images). |
+| `MCSRSWAP_DIRECT_ROTATION` | `false` | Experimental. Allows a direct game→game connection when the target server is empty. A normal ring rotation keeps the target occupied briefly, so it always uses the limbo transit to avoid showing the outgoing player's body. |
 | `MCSRSWAP_VELOCITY_IMAGE` | `ghcr.io/igelway/mcsr-swap-velocity:latest` | Override the Velocity proxy image (e.g. after `just docker-build`). |
 | `MCSRSWAP_GAMESERVER_IMAGE` | `ghcr.io/igelway/mcsr-swap-gameserver:latest` | Override the game server image. |
 | `PUID` / `PGID` | `1000` | UID/GID for container file ownership. |

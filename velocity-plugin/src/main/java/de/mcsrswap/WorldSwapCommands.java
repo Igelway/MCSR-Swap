@@ -37,7 +37,7 @@ public class WorldSwapCommands {
         if (src instanceof ConsoleCommandSource) {
             return true;
         }
-        return src.hasPermission("swap.admin");        
+        return src.hasPermission("swap.admin");
     }
 
     private String validateStartConfiguration(List<Player> participants) {
@@ -125,11 +125,14 @@ public class WorldSwapCommands {
         src.sendMessage(Component.text("§eWorldSwap commands:"));
         if (isAdmin(src)) {
             boolean docker = plugin.dockerMode;
-            src.sendMessage(Component.text("§7/ms start [--clean] §8| §7/ms stop §8| §7/ms forceswap"));
+            src.sendMessage(
+                    Component.text("§7/ms start [--clean] §8| §7/ms stop §8| §7/ms forceswap"));
             src.sendMessage(Component.text("§7/ms setrotation <s>"));
             src.sendMessage(Component.text("§7/ms setteam <a|b|none> <player...> §8"));
             src.sendMessage(Component.text("§7/ms setteamname <a|b> <name>"));
-            src.sendMessage(Component.text("§7/ms setversus <true|false> §8| §7/ms state §8| §7/ms player"));
+            src.sendMessage(
+                    Component.text(
+                            "§7/ms setversus <true|false> §8| §7/ms state §8| §7/ms player"));
             if (docker) {
                 src.sendMessage(
                         Component.text(
@@ -141,7 +144,8 @@ public class WorldSwapCommands {
         }
         src.sendMessage(Component.text("§7/ms jointeam <a|b>"));
         src.sendMessage(Component.text("§7/ms ready §8- §7Confirm readiness during ready check"));
-        src.sendMessage(Component.text("§7/ms ignore [player] §8- §7Opt out of the next game start"));
+        src.sendMessage(
+                Component.text("§7/ms ignore [player] §8- §7Opt out of the next game start"));
     }
 
     void cmdStart(CommandSource src, String[] args) {
@@ -168,8 +172,7 @@ public class WorldSwapCommands {
             return;
         }
 
-        boolean force =
-                Arrays.stream(args).anyMatch(a -> a.equalsIgnoreCase("--clean"));
+        boolean force = Arrays.stream(args).anyMatch(a -> a.equalsIgnoreCase("--clean"));
 
         if (force && plugin.dockerManager != null && plugin.dockerManager.isDockerEnabled()) {
             src.sendMessage(Component.text("§7Cleaning up old containers and volumes..."));
@@ -303,8 +306,7 @@ public class WorldSwapCommands {
             src.sendMessage(Component.text("§cNo game is running!"));
             return;
         }
-        if (plugin.gameState == GameState.STARTING
-                || plugin.gameState == GameState.PREPARING) {
+        if (plugin.gameState == GameState.STARTING || plugin.gameState == GameState.PREPARING) {
             plugin.gameState = GameState.LOBBY;
             plugin.countdownRunning = false; // abort any pending countdown
             src.sendMessage(Component.text("§7Cancelling startup…"));
@@ -353,8 +355,7 @@ public class WorldSwapCommands {
             return;
         }
         // Cancel any in-progress prepare/ready-check before cleaning up.
-        if (plugin.gameState == GameState.PREPARING
-                || plugin.gameState == GameState.READY_CHECK) {
+        if (plugin.gameState == GameState.PREPARING || plugin.gameState == GameState.READY_CHECK) {
             plugin.cancelPrepare();
         }
         if (plugin.dockerManager == null || !plugin.dockerManager.isDockerEnabled()) {
@@ -374,10 +375,9 @@ public class WorldSwapCommands {
     }
 
     /**
-     * Validates that server count is compatible with versus mode constraints.
-     * Does NOT check that serverCount <= participants.size() — prepare is designed to
-     * pre-generate servers before all players arrive.
-     * Returns an error string, or {@code null} if the configuration is valid.
+     * Validates that server count is compatible with versus mode constraints. Does NOT check that
+     * serverCount <= participants.size() — prepare is designed to pre-generate servers before all
+     * players arrive. Returns an error string, or {@code null} if the configuration is valid.
      */
     private String validatePlayerCountForServers(int serverCount) {
         int externalCount =
@@ -467,8 +467,7 @@ public class WorldSwapCommands {
         final int count = serverCount;
         plugin.gameState = GameState.PREPARING;
         src.sendMessage(
-                Component.text(
-                        "§7Starting " + count + " Docker container(s) for pre-generation…"));
+                Component.text("§7Starting " + count + " Docker container(s) for pre-generation…"));
         plugin.dockerManager
                 .startServersAsync(count)
                 .thenAccept(
@@ -680,15 +679,24 @@ public class WorldSwapCommands {
         boolean nowIgnored = !plugin.ignoredPlayers.contains(uuid);
         if (nowIgnored) {
             plugin.ignoredPlayers.add(uuid);
-            target.sendMessage(Component.text("§7You are §enot§7 included in the next game start."));
+            target.sendMessage(
+                    Component.text("§7You are §enot§7 included in the next game start."));
             if (src != target) {
-                src.sendMessage(Component.text("§7" + target.getUsername() + " will be §eskipped§7 at the next game start."));
+                src.sendMessage(
+                        Component.text(
+                                "§7"
+                                        + target.getUsername()
+                                        + " will be §eskipped§7 at the next game start."));
             }
         } else {
             plugin.ignoredPlayers.remove(uuid);
             target.sendMessage(Component.text("§aYou are now included in the next game start."));
             if (src != target) {
-                src.sendMessage(Component.text("§a" + target.getUsername() + " is now included in the next game start."));
+                src.sendMessage(
+                        Component.text(
+                                "§a"
+                                        + target.getUsername()
+                                        + " is now included in the next game start."));
             }
         }
     }
@@ -789,14 +797,8 @@ public class WorldSwapCommands {
 
                 src.sendMessage(
                         Component.text(
-                                "§f"
-                                        + name
-                                        + teamPart
-                                        + " §8→ §e"
-                                        + logicalServer
-                                        + statusPart));
+                                "§f" + name + teamPart + " §8→ §e" + logicalServer + statusPart));
             }
-
         }
 
         // Show lobby players and their ignored status
@@ -825,7 +827,8 @@ public class WorldSwapCommands {
             List<Long> seeds = plugin.worldSeeds;
             int slots = Math.max(seeds.size(), plugin.gameServers.size());
             if (slots == 0) {
-                src.sendMessage(Component.text("§7No seeds configured and no game servers detected."));
+                src.sendMessage(
+                        Component.text("§7No seeds configured and no game servers detected."));
             } else {
                 src.sendMessage(Component.text("§e=== Seeds ==="));
                 for (int i = 0; i < slots; i++) {
@@ -848,7 +851,8 @@ public class WorldSwapCommands {
                 return;
             }
             plugin.worldSeeds.clear();
-            src.sendMessage(Component.text("§aAll seeds cleared (all games will use random seeds)."));
+            src.sendMessage(
+                    Component.text("§aAll seeds cleared (all games will use random seeds)."));
             return;
         }
 
@@ -922,8 +926,7 @@ public class WorldSwapCommands {
                 seeds.set(index - 1, null);
                 trimTrailingNulls(seeds);
             }
-            src.sendMessage(
-                    Component.text("§aGame " + index + " seed cleared (will use random)."));
+            src.sendMessage(Component.text("§aGame " + index + " seed cleared (will use random)."));
             return;
         }
 
@@ -936,8 +939,7 @@ public class WorldSwapCommands {
         try {
             seed = Long.parseLong(args[1]);
         } catch (NumberFormatException e) {
-            src.sendMessage(
-                    Component.text("§cInvalid seed value (must be a long or \"clear\")."));
+            src.sendMessage(Component.text("§cInvalid seed value (must be a long or \"clear\")."));
             return;
         }
         List<Long> seeds = plugin.worldSeeds;
@@ -964,7 +966,8 @@ public class WorldSwapCommands {
         src.sendMessage(Component.text("§7Docker Mode: §f" + plugin.dockerMode));
         src.sendMessage(Component.text("§7Game Servers: §f" + plugin.gameServers));
         src.sendMessage(Component.text("§7Active Players: §f" + plugin.activePlayers.size()));
-        src.sendMessage(Component.text("§7Players in game: §f" + plugin.getGameParticipants().size()));
+        src.sendMessage(
+                Component.text("§7Players in game: §f" + plugin.getGameParticipants().size()));
         src.sendMessage(Component.text("§7Watching Players: §f" + plugin.watchingPlayers.size()));
         src.sendMessage(Component.text("§7Finished Servers: §f" + plugin.finishedServers));
         src.sendMessage(Component.text("§7Current Time: §f" + plugin.currentTime + "s"));

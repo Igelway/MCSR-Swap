@@ -62,4 +62,9 @@ download chunky.jar \
   "https://cdn.modrinth.com/data/fALzjamp/versions/1.2.54/Chunky-1.2.54.jar" \
   e56a2e4febffce8435b04d602b7d19a13d5fbb2e07504f094a5911d9b40f8ef5
 
+# Glacier: world generation performance (legal for 1.16.1). Requires Fabric Loader >= 0.18.4.
+download glacier.jar \
+  "https://github.com/Minecraft-Java-Edition-Speedrunning/legal-mods/raw/d6ed9613e0cf3a2291b8e756ed10a0b127ce632f/legal-mods/glacier/1.16.1/glacier-1.0.1.jar" \
+  28e5d70399910410360b57df4771ec248e5b518dee047c34c91132d188358a85
+
 echo "Successfully downloaded and verified all mods"

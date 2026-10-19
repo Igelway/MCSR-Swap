@@ -22,7 +22,7 @@ RUN mkdir -p /opt/app-files && \
 
 # Download LuckPerms
 RUN mkdir -p /opt/app-files/plugins && \
-    curl -o /opt/app-files/plugins/LuckPerms-Velocity.jar -L https://download.luckperms.net/1631/velocity/LuckPerms-Velocity-5.5.42.jar
+    curl -o /opt/app-files/plugins/LuckPerms-Velocity.jar -L https://download.luckperms.net/1674/velocity/LuckPerms-Velocity-5.5.87.jar
 
 # Copy our plugin to /opt/app-files/plugins
 COPY velocity-plugin/target/mcsrswap-velocity-plugin-*.jar /opt/app-files/plugins/
