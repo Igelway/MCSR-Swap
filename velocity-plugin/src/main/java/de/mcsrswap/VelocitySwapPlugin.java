@@ -132,6 +132,15 @@ public class VelocitySwapPlugin {
      */
     private final Set<UUID> pendingReconnect = new HashSet<>();
 
+    /** Participants who still need to be moved to the lobby after a game ended. */
+    private final Set<UUID> returnToLobby = new HashSet<>();
+
+    /** True while a game end is waiting for the lobby container to become reachable. */
+    private boolean lobbyReturnPending = false;
+
+    /** True once the lobby answered a ping; only then are players forwarded. */
+    private boolean lobbyReadyForReturn = false;
+
     /**
      * Players who have clicked "Yes" in the ready-check prompt (populated during READY_CHECK).
      * Cleared when entering or leaving READY_CHECK.
@@ -1017,6 +1026,18 @@ public class VelocitySwapPlugin {
         // Exception: reconnecting players use pendingReconnect to transit through the lobby.
         if (!gameServers.contains(serverName)) {
             UUID uuid = player.getUniqueId();
+            if (lobbyReturnPending && returnToLobby.contains(uuid)) {
+                if (lobbyServerName.equals(serverName)) {
+                    returnToLobby.remove(uuid);
+                    if (returnToLobby.isEmpty()) {
+                        lobbyReturnPending = false;
+                        lobbyReadyForReturn = false;
+                    }
+                } else if (lobbyReadyForReturn) {
+                    sendToLobby(player);
+                }
+                return;
+            }
             if (pendingReconnect.remove(uuid) && playerServer.containsKey(uuid)) {
                 final String nextServer = playerServer.get(uuid);
                 // Schedule without delay: calling createConnectionRequest() directly from
@@ -1535,6 +1556,9 @@ public class VelocitySwapPlugin {
         finishedServersB.clear();
         // Servers announce their support again when the first player joins this round.
         saveAckServers.clear();
+        returnToLobby.clear();
+        lobbyReturnPending = false;
+        lobbyReadyForReturn = false;
 
         if (versusMode) {
             if (gameServers.size() % 2 != 0) {
@@ -1848,46 +1872,7 @@ public class VelocitySwapPlugin {
         watchingPlayers.clear();
         activePlayers.clear();
         pendingReconnect.clear();
-
-        if (dockerManager != null
-                && dockerManager.isDockerEnabled()
-                && config.docker.autoStopLobby) {
-            for (Player player : participants) {
-                sendToTransit(player);
-            }
-            dockerManager
-                    .startLobbyContainerAsync()
-                    .thenAccept(
-                            ok -> {
-                                if (!ok) {
-                                    logger.error(
-                                            "Lobby container failed to start — players will"
-                                                    + " remain in limbo");
-                                    return;
-                                }
-                                server.getScheduler()
-                                        .buildTask(
-                                                this,
-                                                () -> {
-                                                    for (Player p : server.getAllPlayers()) {
-                                                        p.getCurrentServer()
-                                                                .filter(
-                                                                        cs ->
-                                                                                cs.getServerInfo()
-                                                                                        .getName()
-                                                                                        .equals(
-                                                                                                limboServerName))
-                                                                .ifPresent(cs -> sendToLobby(p));
-                                                    }
-                                                })
-                                        .delay(10, TimeUnit.SECONDS)
-                                        .schedule();
-                            });
-        } else {
-            for (Player player : participants) {
-                sendToLobby(player);
-            }
-        }
+        returnToLobbyAfterGame(participants);
     }
 
     private void winGame() {
@@ -1911,47 +1896,79 @@ public class VelocitySwapPlugin {
         }
         activePlayers.clear();
         pendingReconnect.clear();
+        returnToLobbyAfterGame(participants);
+    }
 
-        if (dockerManager != null
-                && dockerManager.isDockerEnabled()
-                && config.docker.autoStopLobby) {
-            // lobby container and move them there once it's ready.
-            for (Player player : participants) {
-                sendToTransit(player);
-            }
-            dockerManager
-                    .startLobbyContainerAsync()
-                    .thenAccept(
-                            ok -> {
-                                if (!ok) {
-                                    logger.error(
-                                            "Lobby container failed to start — players will"
-                                                    + " remain in limbo");
-                                    return;
-                                }
-                                // Extra grace period for Minecraft to accept connections.
-                                server.getScheduler()
-                                        .buildTask(
-                                                this,
-                                                () -> {
-                                                    for (Player p : server.getAllPlayers()) {
-                                                        p.getCurrentServer()
-                                                                .filter(
-                                                                        cs ->
-                                                                                cs.getServerInfo()
-                                                                                        .getName()
-                                                                                        .equals(
-                                                                                                limboServerName))
-                                                                .ifPresent(cs -> sendToLobby(p));
-                                                    }
-                                                })
-                                        .delay(10, TimeUnit.SECONDS)
-                                        .schedule();
-                            });
-        } else {
+    /**
+     * Moves participants back to the lobby. With auto-stop enabled the lobby is started first;
+     * players wait in limbo and are forwarded as soon as the lobby answers a ping. A player that
+     * arrives in limbo after that moment is forwarded by {@link #onServerConnected}.
+     */
+    private void returnToLobbyAfterGame(List<Player> participants) {
+        if (dockerManager == null
+                || !dockerManager.isDockerEnabled()
+                || !config.docker.autoStopLobby) {
             for (Player player : participants) {
                 sendToLobby(player);
             }
+            return;
+        }
+
+        returnToLobby.clear();
+        for (Player player : participants) {
+            returnToLobby.add(player.getUniqueId());
+        }
+        lobbyReturnPending = !returnToLobby.isEmpty();
+        lobbyReadyForReturn = false;
+
+        for (Player player : participants) {
+            sendToTransit(player);
+        }
+
+        dockerManager
+                .startLobbyContainerAsync()
+                .thenAccept(
+                        ok -> {
+                            if (!ok) {
+                                logger.error(
+                                        "Lobby container failed to start — players will remain in"
+                                                + " limbo");
+                                lobbyReturnPending = false;
+                                returnToLobby.clear();
+                                return;
+                            }
+                            server.getScheduler()
+                                    .buildTask(
+                                            this,
+                                            () -> {
+                                                lobbyReadyForReturn = true;
+                                                moveReturningPlayersToLobby();
+                                            })
+                                    .schedule();
+                        });
+    }
+
+    private void moveReturningPlayersToLobby() {
+        if (!lobbyReturnPending || !lobbyReadyForReturn) return;
+
+        for (UUID uuid : new ArrayList<>(returnToLobby)) {
+            Player player = server.getPlayer(uuid).orElse(null);
+            if (player == null) {
+                returnToLobby.remove(uuid);
+                continue;
+            }
+            String current =
+                    player.getCurrentServer().map(cs -> cs.getServerInfo().getName()).orElse("");
+            if (current.equals(lobbyServerName)) {
+                returnToLobby.remove(uuid);
+            } else {
+                sendToLobby(player);
+            }
+        }
+
+        if (returnToLobby.isEmpty()) {
+            lobbyReturnPending = false;
+            lobbyReadyForReturn = false;
         }
     }
 

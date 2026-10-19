@@ -815,13 +815,77 @@ public class DockerServerManager {
             dockerClient.startContainerCmd(containerName).exec();
             logger.info("Starting lobby container: {}", containerName);
         } catch (com.github.dockerjava.api.exception.NotModifiedException e) {
-            // Container is already running — proceed directly to health-check polling.
+            // Container is already running — proceed directly to the readiness query.
             logger.info("Lobby container {} is already running, skipping start", containerName);
         } catch (Exception e) {
             logger.error("Failed to start lobby container {}: {}", containerName, e.getMessage());
             return java.util.concurrent.CompletableFuture.completedFuture(false);
         }
 
+        if (server.getServer(plugin.lobbyServerName).isEmpty()) {
+            logger.warn(
+                    "Lobby server '{}' is not registered with Velocity; falling back to Docker"
+                            + " health",
+                    plugin.lobbyServerName);
+            return waitForLobbyHealthy(containerName);
+        }
+        return waitForLobbyPingable(plugin.lobbyServerName);
+    }
+
+    /**
+     * Waits until the lobby answers a Velocity ping, i.e. it is actually accepting connections.
+     * This reacts immediately instead of waiting for Docker's 30 s health-check interval.
+     */
+    private java.util.concurrent.CompletableFuture<Boolean> waitForLobbyPingable(
+            String serverName) {
+        java.util.concurrent.CompletableFuture<Boolean> future =
+                new java.util.concurrent.CompletableFuture<>();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
+        pingLobby(serverName, deadline, future);
+        return future;
+    }
+
+    private void pingLobby(
+            String serverName,
+            long deadline,
+            java.util.concurrent.CompletableFuture<Boolean> future) {
+        if (System.nanoTime() >= deadline) {
+            logger.error("Timeout waiting for lobby server '{}' to become pingable", serverName);
+            future.complete(false);
+            return;
+        }
+
+        var registered = server.getServer(serverName);
+        if (registered.isEmpty()) {
+            future.complete(false);
+            return;
+        }
+
+        registered
+                .get()
+                .ping()
+                .whenComplete(
+                        (ping, error) -> {
+                            if (error == null) {
+                                logger.info("Lobby server '{}' is pingable and ready", serverName);
+                                future.complete(true);
+                                return;
+                            }
+                            logger.debug(
+                                    "Lobby server '{}' ping failed: {}",
+                                    serverName,
+                                    error.getMessage());
+                            server.getScheduler()
+                                    .buildTask(
+                                            plugin, () -> pingLobby(serverName, deadline, future))
+                                    .delay(500, TimeUnit.MILLISECONDS)
+                                    .schedule();
+                        });
+    }
+
+    /** Fallback for setups where the lobby is not registered as a Velocity server. */
+    private java.util.concurrent.CompletableFuture<Boolean> waitForLobbyHealthy(
+            String containerName) {
         java.util.concurrent.CompletableFuture<Boolean> future =
                 new java.util.concurrent.CompletableFuture<>();
         final int maxAttempts = 60; // 60 × 2 s = 120 s
